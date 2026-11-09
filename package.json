@@ -1,0 +1,23 @@
+{
+  "name": "genbot-foundation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Full-stack TypeScript project foundation with Next.js, Express, and MongoDB",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n API,WEB -c cyan,green \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "npm run dev --workspace=@genbot/backend",
+    "dev:frontend": "npm run dev --workspace=@genbot/frontend",
+    "build": "npm run build --workspace=@genbot/backend && npm run build --workspace=@genbot/frontend",
+    "typecheck": "npm run typecheck --workspace=@genbot/backend && npm run typecheck --workspace=@genbot/frontend",
+    "start:backend": "npm run start --workspace=@genbot/backend",
+    "start:frontend": "npm run start --workspace=@genbot/frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.7"
+  }
+}
+
