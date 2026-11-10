@@ -1,6 +1,5 @@
-import { FoundationDashboard } from "@/components/FoundationDashboard";
+import { ChatWorkspace } from "@/components/ChatWorkspace";
 
 export default function HomePage() {
-  return <FoundationDashboard />;
+  return <ChatWorkspace />;
 }
-

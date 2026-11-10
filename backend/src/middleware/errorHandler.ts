@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import mongoose from "mongoose";
+import { LlmServiceError } from "../services/llm.service.js";
 
 export function notFoundHandler(req: Request, res: Response): void {
   res.status(404).json({
@@ -14,6 +15,14 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ): void {
+  if (err instanceof LlmServiceError) {
+    res.status(err.statusCode).json({
+      ok: false,
+      error: err.message,
+    });
+    return;
+  }
+
   if (err instanceof mongoose.Error.ValidationError) {
     res.status(400).json({
       ok: false,
@@ -40,4 +49,3 @@ export function errorHandler(
     error: message,
   });
 }
-

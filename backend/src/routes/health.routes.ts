@@ -15,8 +15,12 @@ healthRouter.get("/", async (_req, res) => {
     timestamp: new Date().toISOString(),
     uptimeSeconds: Number(process.uptime().toFixed(2)),
     database,
+    llm: {
+      provider: "ollama",
+      model: env.llmModel,
+      baseUrl: env.llmBaseUrl,
+    },
   });
 });
 
 export { healthRouter };
-

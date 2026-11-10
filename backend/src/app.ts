@@ -2,6 +2,7 @@ import cors from "cors";
 import express from "express";
 import { env } from "./config/env.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
+import { chatRouter } from "./routes/chat.routes.js";
 import { echoRouter } from "./routes/echo.routes.js";
 import { healthRouter } from "./routes/health.routes.js";
 
@@ -11,12 +12,12 @@ export function createApp() {
   app.use(
     cors({
       origin: env.clientUrl,
-      methods: ["GET", "POST", "OPTIONS"],
+      methods: ["GET", "POST", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type"],
     })
   );
 
-  app.use(express.json({ limit: "16kb" }));
+  app.use(express.json({ limit: "64kb" }));
 
   app.use((req, res, next) => {
     const startedAt = performance.now();
@@ -35,12 +36,15 @@ export function createApp() {
       status: "running",
       endpoints: {
         health: "/api/health",
+        chat: "/api/chat",
+        chatHistory: "/api/chat/history",
         echo: "/api/echo",
       },
     });
   });
 
   app.use("/api/health", healthRouter);
+  app.use("/api/chat", chatRouter);
   app.use("/api/echo", echoRouter);
 
   app.use(notFoundHandler);
@@ -48,4 +52,3 @@ export function createApp() {
 
   return app;
 }
-

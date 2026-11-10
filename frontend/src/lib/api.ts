@@ -18,6 +18,11 @@ export interface HealthResponse {
   timestamp: string;
   uptimeSeconds: number;
   database: DatabaseHealth;
+  llm?: {
+    provider: string;
+    model: string;
+    baseUrl: string;
+  };
 }
 
 export interface HealthCheckResult {
@@ -32,6 +37,47 @@ export interface EchoItem {
   source: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export type ChatRole = "user" | "assistant";
+
+export interface ChatTokenUsage {
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+}
+
+export interface ChatMessage {
+  _id: string;
+  conversationId: string;
+  role: ChatRole;
+  content: string;
+  model?: string;
+  usage?: ChatTokenUsage;
+  durationMs?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatHistoryResponse {
+  ok: boolean;
+  conversationId: string;
+  model: string;
+  temperature: number;
+  systemPrompt: string;
+  messages: ChatMessage[];
+}
+
+export interface SendChatResponse {
+  ok: boolean;
+  conversationId: string;
+  userMessage: ChatMessage;
+  assistantMessage: ChatMessage;
+  meta: {
+    model: string;
+    temperature: number;
+    contextMessagesSent: number;
+  };
 }
 
 export async function fetchHealth(): Promise<HealthCheckResult> {
@@ -97,3 +143,66 @@ export async function createEchoEntry(message: string): Promise<{
   };
 }
 
+export async function fetchChatHistory(): Promise<ChatHistoryResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/chat/history`, {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  const payload = (await response.json()) as ChatHistoryResponse & {
+    error?: string;
+  };
+
+  if (!response.ok || !payload.ok) {
+    throw new Error(
+      payload.error ?? `Failed to load chat history (HTTP ${response.status})`
+    );
+  }
+
+  return payload;
+}
+
+export async function sendChatMessage(
+  message: string,
+  temperature?: number
+): Promise<{ result: SendChatResponse; roundTripMs: number }> {
+  const startedAt = performance.now();
+  const response = await fetch(`${API_BASE_URL}/api/chat`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ message, temperature }),
+  });
+  const roundTripMs = Number((performance.now() - startedAt).toFixed(2));
+
+  const payload = (await response.json()) as SendChatResponse & {
+    error?: string;
+  };
+
+  if (!response.ok || !payload.ok) {
+    throw new Error(
+      payload.error ?? `Chat request failed (HTTP ${response.status})`
+    );
+  }
+
+  return {
+    result: payload,
+    roundTripMs,
+  };
+}
+
+export async function clearChatHistory(): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/chat/history`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as {
+      error?: string;
+    };
+    throw new Error(
+      payload.error ?? `Failed to clear chat history (HTTP ${response.status})`
+    );
+  }
+}

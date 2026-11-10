@@ -3,9 +3,9 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "GenBot Foundation — Next.js + Express + MongoDB",
+  title: "GenZBot — AI Chatbot (Next.js + Express + Ollama + MongoDB)",
   description:
-    "Project foundation with Next.js frontend, Express TypeScript API, and MongoDB connection.",
+    "Full-stack AI chatbot powered by Next.js, Express, Ollama LLM API, and MongoDB.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -15,4 +15,3 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     </html>
   );
 }
-
