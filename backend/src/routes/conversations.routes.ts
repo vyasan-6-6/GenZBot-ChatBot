@@ -6,6 +6,7 @@ import { ChatMessage } from "../models/ChatMessage.js";
 import { Conversation } from "../models/Conversation.js";
 import {
   ensureDatabaseReady,
+  regenerateConversationTitle,
   sendMessageToConversation,
 } from "../services/chat.service.js";
 
@@ -36,7 +37,8 @@ conversationsRouter.post("/", async (req, res) => {
 
   const rawTitle =
     typeof req.body?.title === "string" ? req.body.title.trim() : "";
-  const title = rawTitle || "New Chat";
+  const hasCustomTitle = rawTitle.length > 0;
+  const title = hasCustomTitle ? rawTitle : "New Chat";
 
   if (title.length > 120) {
     throw new HttpError(400, "Conversation title cannot exceed 120 characters.");
@@ -49,6 +51,7 @@ conversationsRouter.post("/", async (req, res) => {
 
   const conversation = await Conversation.create({
     title,
+    titleSource: hasCustomTitle ? "manual" : "default",
     systemPrompt: rawSystemPrompt || env.llmSystemPrompt,
     messageCount: 0,
   });
@@ -98,7 +101,7 @@ conversationsRouter.patch("/:id", async (req, res) => {
 
   const updated = await Conversation.findByIdAndUpdate(
     req.params.id,
-    { $set: { title } },
+    { $set: { title, titleSource: "manual" } },
     { returnDocument: "after", runValidators: true }
   ).lean();
 
@@ -109,6 +112,15 @@ conversationsRouter.patch("/:id", async (req, res) => {
   res.status(200).json({
     ok: true,
     conversation: updated,
+  });
+});
+
+conversationsRouter.post("/:id/title", async (req, res) => {
+  const conversation = await regenerateConversationTitle(req.params.id);
+
+  res.status(200).json({
+    ok: true,
+    conversation,
   });
 });
 
@@ -150,4 +162,3 @@ conversationsRouter.post("/:id/messages", async (req, res) => {
 });
 
 export { conversationsRouter };
-

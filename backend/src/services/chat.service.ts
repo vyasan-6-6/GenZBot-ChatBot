@@ -3,7 +3,11 @@ import { env } from "../config/env.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import { ChatMessage } from "../models/ChatMessage.js";
 import { Conversation } from "../models/Conversation.js";
-import { generateChatReply, type LlmMessage } from "./llm.service.js";
+import {
+  generateChatReply,
+  generateConversationTitle,
+  type LlmMessage,
+} from "./llm.service.js";
 
 const DEFAULT_TITLES = new Set(["New Chat", "GenZBot Chat"]);
 
@@ -130,7 +134,22 @@ export async function sendMessageToConversation(params: {
     updatedAt: assistantCreatedAt,
   });
 
-  const shouldAutoTitle = DEFAULT_TITLES.has(conversation.title);
+  const shouldAutoTitle =
+    (conversation.titleSource ?? "default") === "default" &&
+    DEFAULT_TITLES.has(conversation.title);
+
+  let nextTitle: string | undefined;
+  if (shouldAutoTitle) {
+    try {
+      nextTitle = await generateConversationTitle([
+        { role: "user", content: userText },
+        { role: "assistant", content: reply.content },
+      ]);
+    } catch (titleError) {
+      console.warn("[Title] Falling back to prompt snippet:", titleError);
+      nextTitle = buildAutoTitle(userText);
+    }
+  }
 
   const updatedConversation = await Conversation.findByIdAndUpdate(
     conversation._id,
@@ -139,7 +158,7 @@ export async function sendMessageToConversation(params: {
       $set: {
         updatedAt: assistantCreatedAt,
         lastMessagePreview: buildPreview(reply.content),
-        ...(shouldAutoTitle ? { title: buildAutoTitle(userText) } : {}),
+        ...(nextTitle ? { title: nextTitle, titleSource: "auto" } : {}),
       },
     },
     { returnDocument: "after" }
@@ -157,3 +176,47 @@ export async function sendMessageToConversation(params: {
   };
 }
 
+export async function regenerateConversationTitle(conversationId: string) {
+  ensureDatabaseReady();
+
+  if (!mongoose.isValidObjectId(conversationId)) {
+    throw new HttpError(400, "Invalid conversation ID");
+  }
+
+  const conversation = await Conversation.findById(conversationId).lean();
+  if (!conversation) {
+    throw new HttpError(404, "Conversation not found");
+  }
+
+  const messages = await ChatMessage.find({ conversationId: conversation._id })
+    .sort({ createdAt: 1, _id: 1 })
+    .limit(6)
+    .lean();
+
+  if (messages.length === 0) {
+    throw new HttpError(
+      400,
+      "Cannot generate a title for an empty conversation."
+    );
+  }
+
+  const turns = messages.map((msg) => ({
+    role: msg.role as "user" | "assistant",
+    content: msg.content,
+  }));
+
+  const generatedTitle = await generateConversationTitle(turns);
+
+  const updated = await Conversation.findByIdAndUpdate(
+    conversation._id,
+    {
+      $set: {
+        title: generatedTitle,
+        titleSource: "auto",
+      },
+    },
+    { returnDocument: "after", runValidators: true }
+  ).lean();
+
+  return updated ?? conversation;
+}

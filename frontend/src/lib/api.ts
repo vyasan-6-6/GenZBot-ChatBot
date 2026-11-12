@@ -63,6 +63,7 @@ export interface ConversationSummary {
   _id: string;
   sessionKey: string;
   title: string;
+  titleSource?: "default" | "auto" | "manual";
   systemPrompt?: string;
   lastMessagePreview?: string;
   messageCount: number;
@@ -249,6 +250,31 @@ export async function renameConversation(
   if (!response.ok || !payload.ok || !payload.conversation) {
     throw new Error(
       payload.error ?? `Failed to rename conversation (HTTP ${response.status})`
+    );
+  }
+
+  return payload.conversation;
+}
+
+export async function regenerateConversationTitle(
+  conversationId: string
+): Promise<ConversationSummary> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/conversations/${encodeURIComponent(conversationId)}/title`,
+    {
+      method: "POST",
+    }
+  );
+
+  const payload = (await response.json()) as {
+    ok: boolean;
+    conversation?: ConversationSummary;
+    error?: string;
+  };
+
+  if (!response.ok || !payload.ok || !payload.conversation) {
+    throw new Error(
+      payload.error ?? `Failed to generate title (HTTP ${response.status})`
     );
   }
 

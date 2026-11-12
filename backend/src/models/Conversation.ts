@@ -17,6 +17,11 @@ const conversationSchema = new Schema(
       maxlength: [120, "Conversation title cannot exceed 120 characters"],
       default: "New Chat",
     },
+    titleSource: {
+      type: String,
+      enum: ["default", "auto", "manual"],
+      default: "default",
+    },
     systemPrompt: {
       type: String,
       trim: true,

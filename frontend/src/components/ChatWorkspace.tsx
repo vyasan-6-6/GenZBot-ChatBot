@@ -15,6 +15,7 @@ import {
   fetchConversationDetail,
   fetchConversations,
   fetchHealth,
+  regenerateConversationTitle,
   renameConversation,
   sendConversationMessage,
   type ChatMessage,
@@ -42,11 +43,14 @@ export function ChatWorkspace() {
   const [creatingConversation, setCreatingConversation] =
     useState<boolean>(false);
   const [sending, setSending] = useState<boolean>(false);
+  const [titling, setTitling] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState<string>("");
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState<string>("");
+  const [editingHeaderTitle, setEditingHeaderTitle] = useState<boolean>(false);
+  const [headerTitleDraft, setHeaderTitleDraft] = useState<string>("");
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -56,9 +60,19 @@ export function ChatWorkspace() {
     activeIdRef.current = activeConversationId;
   }, [activeConversationId]);
 
+  const activeConversation =
+    conversations.find((c) => c._id === activeConversationId) ?? null;
+
+  useEffect(() => {
+    document.title = activeConversation
+      ? `${activeConversation.title} — GenZBot`
+      : "GenZBot — AI Chatbot";
+  }, [activeConversation]);
+
   const selectConversation = useCallback(async (conversationId: string) => {
     setActiveConversationId(conversationId);
     activeIdRef.current = conversationId;
+    setEditingHeaderTitle(false);
     setLoadingMessages(true);
     setError(null);
 
@@ -134,10 +148,11 @@ export function ChatWorkspace() {
   }, [messages, sending]);
 
   async function handleNewChat() {
-    if (sending || creatingConversation) return;
+    if (sending || titling || creatingConversation) return;
     setCreatingConversation(true);
     setError(null);
     setEditingId(null);
+    setEditingHeaderTitle(false);
 
     try {
       const created = await createConversation("New Chat");
@@ -155,18 +170,20 @@ export function ChatWorkspace() {
   }
 
   async function handleSelectConversation(conversationId: string) {
-    if (sending || conversationId === activeConversationId) return;
+    if (sending || titling || conversationId === activeConversationId) return;
     setEditingId(null);
+    setEditingHeaderTitle(false);
     await selectConversation(conversationId);
   }
 
   function startRenaming(conv: ConversationSummary) {
+    setEditingHeaderTitle(false);
     setEditingId(conv._id);
     setEditingTitle(conv.title);
   }
 
-  async function submitRename(conversationId: string) {
-    const trimmed = editingTitle.trim();
+  async function submitRename(conversationId: string, rawTitle: string) {
+    const trimmed = rawTitle.trim();
     if (!trimmed) {
       setError("Conversation title cannot be empty.");
       return;
@@ -178,6 +195,7 @@ export function ChatWorkspace() {
         prev.map((c) => (c._id === conversationId ? updated : c))
       );
       setEditingId(null);
+      setEditingHeaderTitle(false);
       setError(null);
     } catch (err) {
       setError(
@@ -186,11 +204,46 @@ export function ChatWorkspace() {
     }
   }
 
+  function startHeaderRename() {
+    if (!activeConversation || sending || titling) return;
+    setEditingId(null);
+    setHeaderTitleDraft(activeConversation.title);
+    setEditingHeaderTitle(true);
+  }
+
+  async function handleRegenerateTitle() {
+    if (!activeConversation || sending || titling || messages.length === 0) {
+      return;
+    }
+
+    setTitling(true);
+    setError(null);
+
+    try {
+      const updated = await regenerateConversationTitle(activeConversation._id);
+      setConversations((prev) =>
+        prev.map((c) => (c._id === updated._id ? updated : c))
+      );
+      if (editingHeaderTitle && activeIdRef.current === updated._id) {
+        setEditingHeaderTitle(false);
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to generate title"
+      );
+    } finally {
+      setTitling(false);
+    }
+  }
+
   async function handleDeleteConversation(conversationId: string) {
-    if (sending) return;
+    if (sending || titling) return;
     setError(null);
     if (editingId === conversationId) {
       setEditingId(null);
+    }
+    if (activeConversationId === conversationId) {
+      setEditingHeaderTitle(false);
     }
 
     try {
@@ -216,7 +269,7 @@ export function ChatWorkspace() {
 
   async function submitMessage() {
     const trimmed = input.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed || sending || titling) return;
 
     setSending(true);
     setError(null);
@@ -297,8 +350,6 @@ export function ChatWorkspace() {
   }
 
   const isHealthy = health?.data.status === "ok";
-  const activeConversation =
-    conversations.find((c) => c._id === activeConversationId) ?? null;
 
   return (
     <div className="shell">
@@ -362,7 +413,7 @@ export function ChatWorkspace() {
                 <button
                   type="button"
                   onClick={() => void handleNewChat()}
-                  disabled={sending || creatingConversation}
+                  disabled={sending || titling || creatingConversation}
                   className="btn-primary new-chat-btn"
                 >
                   {creatingConversation ? "Creating..." : "+ New Chat"}
@@ -394,7 +445,7 @@ export function ChatWorkspace() {
                             className="rename-form"
                             onSubmit={(e) => {
                               e.preventDefault();
-                              void submitRename(conv._id);
+                              void submitRename(conv._id, editingTitle);
                             }}
                           >
                             <input
@@ -431,7 +482,7 @@ export function ChatWorkspace() {
                               onClick={() =>
                                 void handleSelectConversation(conv._id)
                               }
-                              disabled={sending}
+                              disabled={sending || titling}
                             >
                               <span className="sidebar-title">{conv.title}</span>
                               <span className="sidebar-sub">
@@ -445,7 +496,7 @@ export function ChatWorkspace() {
                                 type="button"
                                 className="icon-btn"
                                 onClick={() => startRenaming(conv)}
-                                disabled={sending}
+                                disabled={sending || titling}
                                 title="Rename conversation"
                                 aria-label={`Rename ${conv.title}`}
                               >
@@ -457,7 +508,7 @@ export function ChatWorkspace() {
                                 onClick={() =>
                                   void handleDeleteConversation(conv._id)
                                 }
-                                disabled={sending}
+                                disabled={sending || titling}
                                 title="Delete conversation"
                                 aria-label={`Delete ${conv.title}`}
                               >
@@ -477,13 +528,72 @@ export function ChatWorkspace() {
           <main className="chat-container">
             <div className="chat-toolbar">
               <div className="active-chat-heading">
-                <strong>
-                  {activeConversation ? activeConversation.title : "New Chat"}
-                </strong>
-                {activeConversation && (
-                  <span className="muted">
-                    {activeConversation.messageCount} messages
-                  </span>
+                {activeConversation && editingHeaderTitle ? (
+                  <form
+                    className="toolbar-rename-form"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void submitRename(
+                        activeConversation._id,
+                        headerTitleDraft
+                      );
+                    }}
+                  >
+                    <input
+                      type="text"
+                      value={headerTitleDraft}
+                      onChange={(e) => setHeaderTitleDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          setEditingHeaderTitle(false);
+                        }
+                      }}
+                      maxLength={120}
+                      autoFocus
+                      aria-label="Edit active conversation title"
+                    />
+                    <button type="submit" className="link-btn">
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      className="link-btn"
+                      onClick={() => setEditingHeaderTitle(false)}
+                    >
+                      Cancel
+                    </button>
+                  </form>
+                ) : (
+                  <>
+                    {activeConversation ? (
+                      <button
+                        type="button"
+                        className="toolbar-title-btn"
+                        onClick={startHeaderRename}
+                        disabled={sending || titling}
+                        title="Click to rename conversation"
+                      >
+                        {activeConversation.title}
+                      </button>
+                    ) : (
+                      <strong>New Chat</strong>
+                    )}
+                    {activeConversation && (
+                      <span className="muted">
+                        {activeConversation.messageCount} messages
+                        {activeConversation.titleSource &&
+                          activeConversation.titleSource !== "default" && (
+                            <>
+                              {" "}
+                              &middot;{" "}
+                              {activeConversation.titleSource === "auto"
+                                ? "auto-titled"
+                                : "custom title"}
+                            </>
+                          )}
+                      </span>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -502,13 +612,25 @@ export function ChatWorkspace() {
                   </select>
                 </div>
 
+                {activeConversation && messages.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void handleRegenerateTitle()}
+                    disabled={sending || titling}
+                    className="btn-secondary"
+                    title="Generate a concise title from conversation messages"
+                  >
+                    {titling ? "Titling..." : "Auto-title"}
+                  </button>
+                )}
+
                 {activeConversation && (
                   <button
                     type="button"
                     onClick={() =>
                       void handleDeleteConversation(activeConversation._id)
                     }
-                    disabled={sending}
+                    disabled={sending || titling}
                     className="btn-secondary"
                   >
                     Delete Chat
@@ -531,7 +653,8 @@ export function ChatWorkspace() {
                   </h2>
                   <p className="muted">
                     Each conversation keeps its own isolated context window and
-                    history in MongoDB, powered by <code>{modelName}</code>.
+                    gets a smart title automatically after your first turn with{" "}
+                    <code>{modelName}</code>.
                   </p>
                 </div>
               ) : (

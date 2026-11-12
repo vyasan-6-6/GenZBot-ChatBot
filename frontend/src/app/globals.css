@@ -740,3 +740,43 @@ button:disabled {
     border-bottom: 1px solid var(--border);
   }
 }
+
+
+.toolbar-title-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.15rem 0.4rem;
+  margin-left: -0.4rem;
+  color: var(--text);
+  font-size: 0.98rem;
+  font-weight: 700;
+  cursor: pointer;
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.toolbar-title-btn:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.toolbar-rename-form {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.toolbar-rename-form input {
+  min-width: 220px;
+  padding: 0.32rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.92rem;
+}
