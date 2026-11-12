@@ -10,6 +10,10 @@ import {
 } from "react";
 import { FoundationDashboard } from "@/components/FoundationDashboard";
 import {
+  copyTextToClipboard,
+  MarkdownMessage,
+} from "@/components/MarkdownMessage";
+import {
   createConversation,
   deleteConversation,
   fetchConversationDetail,
@@ -53,6 +57,7 @@ export function ChatWorkspace() {
   const [editingHeaderTitle, setEditingHeaderTitle] = useState<boolean>(false);
   const [headerTitleDraft, setHeaderTitleDraft] = useState<string>("");
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const activeIdRef = useRef<string | null>(null);
@@ -271,6 +276,16 @@ export function ChatWorkspace() {
 
   function handleStopStreaming() {
     streamAbortRef.current?.abort();
+  }
+
+  async function handleCopyMessage(messageId: string, content: string) {
+    const ok = await copyTextToClipboard(content);
+    if (ok) {
+      setCopiedMessageId(messageId);
+      setTimeout(() => {
+        setCopiedMessageId((prev) => (prev === messageId ? null : prev));
+      }, 1800);
+    }
   }
 
   async function submitMessage() {
@@ -705,14 +720,33 @@ export function ChatWorkspace() {
                         <strong>
                           {msg.role === "user" ? "You" : "GenZBot"}
                         </strong>
-                        <span>
-                          {new Date(msg.createdAt).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
+                        <div className="bubble-header-actions">
+                          {msg.role === "assistant" && (
+                            <button
+                              type="button"
+                              className="icon-btn"
+                              onClick={() =>
+                                void handleCopyMessage(msg._id, msg.content)
+                              }
+                            >
+                              {copiedMessageId === msg._id ? "Copied!" : "Copy"}
+                            </button>
+                          )}
+                          <span>
+                            {new Date(msg.createdAt).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        </div>
                       </div>
-                      <div className="bubble-content">{msg.content}</div>
+                      <div className="bubble-content">
+                        {msg.role === "assistant" ? (
+                          <MarkdownMessage content={msg.content} />
+                        ) : (
+                          msg.content
+                        )}
+                      </div>
                       {msg.role === "assistant" &&
                         (msg.usage || msg.durationMs !== undefined) && (
                           <div className="bubble-meta">
@@ -745,7 +779,7 @@ export function ChatWorkspace() {
                     <div className="bubble-content">
                       {streamingContent ? (
                         <>
-                          {streamingContent}
+                          <MarkdownMessage content={streamingContent} />
                           <span className="stream-cursor" aria-hidden="true">
                             &#9610;
                           </span>
