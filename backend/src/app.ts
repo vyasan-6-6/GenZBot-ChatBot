@@ -3,6 +3,7 @@ import express from "express";
 import { env } from "./config/env.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { chatRouter } from "./routes/chat.routes.js";
+import { conversationsRouter } from "./routes/conversations.routes.js";
 import { echoRouter } from "./routes/echo.routes.js";
 import { healthRouter } from "./routes/health.routes.js";
 
@@ -12,7 +13,7 @@ export function createApp() {
   app.use(
     cors({
       origin: env.clientUrl,
-      methods: ["GET", "POST", "DELETE", "OPTIONS"],
+      methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type"],
     })
   );
@@ -36,6 +37,7 @@ export function createApp() {
       status: "running",
       endpoints: {
         health: "/api/health",
+        conversations: "/api/conversations",
         chat: "/api/chat",
         chatHistory: "/api/chat/history",
         echo: "/api/echo",
@@ -44,6 +46,7 @@ export function createApp() {
   });
 
   app.use("/api/health", healthRouter);
+  app.use("/api/conversations", conversationsRouter);
   app.use("/api/chat", chatRouter);
   app.use("/api/echo", echoRouter);
 

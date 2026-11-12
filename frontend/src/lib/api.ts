@@ -59,18 +59,29 @@ export interface ChatMessage {
   updatedAt: string;
 }
 
-export interface ChatHistoryResponse {
+export interface ConversationSummary {
+  _id: string;
+  sessionKey: string;
+  title: string;
+  systemPrompt?: string;
+  lastMessagePreview?: string;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConversationDetailResponse {
   ok: boolean;
-  conversationId: string;
+  conversation: ConversationSummary;
+  messages: ChatMessage[];
   model: string;
   temperature: number;
-  systemPrompt: string;
-  messages: ChatMessage[];
 }
 
 export interface SendChatResponse {
   ok: boolean;
   conversationId: string;
+  conversation: ConversationSummary;
   userMessage: ChatMessage;
   assistantMessage: ChatMessage;
   meta: {
@@ -143,37 +154,141 @@ export async function createEchoEntry(message: string): Promise<{
   };
 }
 
-export async function fetchChatHistory(): Promise<ChatHistoryResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/chat/history`, {
+export async function fetchConversations(): Promise<ConversationSummary[]> {
+  const response = await fetch(`${API_BASE_URL}/api/conversations`, {
     method: "GET",
     cache: "no-store",
   });
 
-  const payload = (await response.json()) as ChatHistoryResponse & {
+  const payload = (await response.json()) as {
+    ok: boolean;
+    conversations?: ConversationSummary[];
+    error?: string;
+  };
+
+  if (!response.ok || !payload.ok || !payload.conversations) {
+    throw new Error(
+      payload.error ?? `Failed to load conversations (HTTP ${response.status})`
+    );
+  }
+
+  return payload.conversations;
+}
+
+export async function createConversation(
+  title?: string
+): Promise<ConversationSummary> {
+  const response = await fetch(`${API_BASE_URL}/api/conversations`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(title ? { title } : {}),
+  });
+
+  const payload = (await response.json()) as {
+    ok: boolean;
+    conversation?: ConversationSummary;
+    error?: string;
+  };
+
+  if (!response.ok || !payload.ok || !payload.conversation) {
+    throw new Error(
+      payload.error ?? `Failed to create conversation (HTTP ${response.status})`
+    );
+  }
+
+  return payload.conversation;
+}
+
+export async function fetchConversationDetail(
+  conversationId: string
+): Promise<ConversationDetailResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/conversations/${encodeURIComponent(conversationId)}`,
+    {
+      method: "GET",
+      cache: "no-store",
+    }
+  );
+
+  const payload = (await response.json()) as ConversationDetailResponse & {
     error?: string;
   };
 
   if (!response.ok || !payload.ok) {
     throw new Error(
-      payload.error ?? `Failed to load chat history (HTTP ${response.status})`
+      payload.error ?? `Failed to load conversation (HTTP ${response.status})`
     );
   }
 
   return payload;
 }
 
-export async function sendChatMessage(
+export async function renameConversation(
+  conversationId: string,
+  title: string
+): Promise<ConversationSummary> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/conversations/${encodeURIComponent(conversationId)}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ title }),
+    }
+  );
+
+  const payload = (await response.json()) as {
+    ok: boolean;
+    conversation?: ConversationSummary;
+    error?: string;
+  };
+
+  if (!response.ok || !payload.ok || !payload.conversation) {
+    throw new Error(
+      payload.error ?? `Failed to rename conversation (HTTP ${response.status})`
+    );
+  }
+
+  return payload.conversation;
+}
+
+export async function deleteConversation(conversationId: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/conversations/${encodeURIComponent(conversationId)}`,
+    {
+      method: "DELETE",
+    }
+  );
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as {
+      error?: string;
+    };
+    throw new Error(
+      payload.error ?? `Failed to delete conversation (HTTP ${response.status})`
+    );
+  }
+}
+
+export async function sendConversationMessage(
+  conversationId: string,
   message: string,
   temperature?: number
 ): Promise<{ result: SendChatResponse; roundTripMs: number }> {
   const startedAt = performance.now();
-  const response = await fetch(`${API_BASE_URL}/api/chat`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ message, temperature }),
-  });
+  const response = await fetch(
+    `${API_BASE_URL}/api/conversations/${encodeURIComponent(conversationId)}/messages`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ message, temperature }),
+    }
+  );
   const roundTripMs = Number((performance.now() - startedAt).toFixed(2));
 
   const payload = (await response.json()) as SendChatResponse & {
@@ -190,19 +305,4 @@ export async function sendChatMessage(
     result: payload,
     roundTripMs,
   };
-}
-
-export async function clearChatHistory(): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/chat/history`, {
-    method: "DELETE",
-  });
-
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => ({}))) as {
-      error?: string;
-    };
-    throw new Error(
-      payload.error ?? `Failed to clear chat history (HTTP ${response.status})`
-    );
-  }
 }

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Schema, model, type InferSchemaType } from "mongoose";
 
 const conversationSchema = new Schema(
@@ -7,17 +8,28 @@ const conversationSchema = new Schema(
       required: true,
       unique: true,
       trim: true,
-      default: "default",
+      default: () => randomUUID(),
     },
     title: {
       type: String,
       required: true,
       trim: true,
-      default: "GenZBot Chat",
+      maxlength: [120, "Conversation title cannot exceed 120 characters"],
+      default: "New Chat",
     },
     systemPrompt: {
       type: String,
       trim: true,
+    },
+    lastMessagePreview: {
+      type: String,
+      trim: true,
+      maxlength: 160,
+    },
+    messageCount: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
   },
   {
@@ -26,6 +38,8 @@ const conversationSchema = new Schema(
     collection: "conversations",
   }
 );
+
+conversationSchema.index({ updatedAt: -1, _id: -1 });
 
 export type ConversationDocument = InferSchemaType<typeof conversationSchema>;
 

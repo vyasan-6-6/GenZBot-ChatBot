@@ -2,6 +2,16 @@ import type { NextFunction, Request, Response } from "express";
 import mongoose from "mongoose";
 import { LlmServiceError } from "../services/llm.service.js";
 
+export class HttpError extends Error {
+  statusCode: number;
+
+  constructor(statusCode: number, message: string) {
+    super(message);
+    this.name = "HttpError";
+    this.statusCode = statusCode;
+  }
+}
+
 export function notFoundHandler(req: Request, res: Response): void {
   res.status(404).json({
     ok: false,
@@ -15,6 +25,14 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ): void {
+  if (err instanceof HttpError) {
+    res.status(err.statusCode).json({
+      ok: false,
+      error: err.message,
+    });
+    return;
+  }
+
   if (err instanceof LlmServiceError) {
     res.status(err.statusCode).json({
       ok: false,
