@@ -780,3 +780,37 @@ button:disabled {
   color: var(--text);
   font-size: 0.92rem;
 }
+
+
+.stream-cursor {
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--accent);
+  animation: blink-cursor 0.9s steps(2, start) infinite;
+}
+
+@keyframes blink-cursor {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.btn-stop {
+  min-width: 96px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  padding: 0.55rem 0.95rem;
+  background: var(--err-bg);
+  color: var(--err-text);
+  border: 1px solid var(--err-border);
+}
+
+.btn-stop:hover {
+  background: rgba(239, 68, 68, 0.24);
+}

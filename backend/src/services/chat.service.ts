@@ -5,7 +5,9 @@ import { ChatMessage } from "../models/ChatMessage.js";
 import { Conversation } from "../models/Conversation.js";
 import {
   generateChatReply,
+  generateChatReplyStream,
   generateConversationTitle,
+  type LlmGenerationResult,
   type LlmMessage,
 } from "./llm.service.js";
 
@@ -60,7 +62,7 @@ export function buildPreview(text: string): string {
   return `${clean.slice(0, 97).trimEnd()}...`;
 }
 
-export async function sendMessageToConversation(params: {
+async function prepareConversationTurn(params: {
   conversationId: string;
   message: unknown;
   temperature?: unknown;
@@ -99,7 +101,25 @@ export async function sendMessageToConversation(params: {
     { role: "user", content: userText },
   ];
 
-  const reply = await generateChatReply(llmMessages, { temperature });
+  return {
+    conversation,
+    userText,
+    temperature,
+    llmMessages,
+  };
+}
+
+async function persistConversationTurn(params: {
+  conversation: NonNullable<
+    Awaited<ReturnType<typeof prepareConversationTurn>>["conversation"]
+  >;
+  userText: string;
+  temperature: number;
+  contextMessagesSent: number;
+  reply: LlmGenerationResult;
+}) {
+  const { conversation, userText, temperature, contextMessagesSent, reply } =
+    params;
 
   const userCreatedAt = new Date();
   const userMessage = await ChatMessage.create({
@@ -171,9 +191,58 @@ export async function sendMessageToConversation(params: {
     meta: {
       model: reply.model,
       temperature,
-      contextMessagesSent: llmMessages.length,
+      contextMessagesSent,
     },
   };
+}
+
+export async function sendMessageToConversation(params: {
+  conversationId: string;
+  message: unknown;
+  temperature?: unknown;
+}) {
+  const prepared = await prepareConversationTurn(params);
+  const reply = await generateChatReply(prepared.llmMessages, {
+    temperature: prepared.temperature,
+  });
+
+  return persistConversationTurn({
+    conversation: prepared.conversation,
+    userText: prepared.userText,
+    temperature: prepared.temperature,
+    contextMessagesSent: prepared.llmMessages.length,
+    reply,
+  });
+}
+
+export async function streamMessageToConversation(params: {
+  conversationId: string;
+  message: unknown;
+  temperature?: unknown;
+  signal?: AbortSignal;
+  onStart: (meta: { conversationId: string; model: string }) => void;
+  onToken: (token: string) => void;
+}) {
+  const prepared = await prepareConversationTurn(params);
+
+  params.onStart({
+    conversationId: String(prepared.conversation._id),
+    model: env.llmModel,
+  });
+
+  const reply = await generateChatReplyStream(prepared.llmMessages, {
+    temperature: prepared.temperature,
+    signal: params.signal,
+    onToken: params.onToken,
+  });
+
+  return persistConversationTurn({
+    conversation: prepared.conversation,
+    userText: prepared.userText,
+    temperature: prepared.temperature,
+    contextMessagesSent: prepared.llmMessages.length,
+    reply,
+  });
 }
 
 export async function regenerateConversationTitle(conversationId: string) {

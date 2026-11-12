@@ -8,6 +8,7 @@ import {
   ensureDatabaseReady,
   regenerateConversationTitle,
   sendMessageToConversation,
+  streamMessageToConversation,
 } from "../services/chat.service.js";
 
 const conversationsRouter = Router();
@@ -16,6 +17,14 @@ function assertValidObjectId(id: string): void {
   if (!mongoose.isValidObjectId(id)) {
     throw new HttpError(400, "Invalid conversation ID");
   }
+}
+
+function writeSseEvent(
+  res: { write: (chunk: string) => boolean },
+  event: string,
+  data: unknown
+): void {
+  res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
 conversationsRouter.get("/", async (_req, res) => {
@@ -159,6 +168,72 @@ conversationsRouter.post("/:id/messages", async (req, res) => {
     assistantMessage: result.assistantMessage,
     meta: result.meta,
   });
+});
+
+conversationsRouter.post("/:id/messages/stream", async (req, res, next) => {
+  const abortController = new AbortController();
+  let streamStarted = false;
+
+  res.on("close", () => {
+    if (!res.writableEnded) {
+      abortController.abort();
+    }
+  });
+
+  try {
+    const result = await streamMessageToConversation({
+      conversationId: req.params.id,
+      message: req.body?.message,
+      temperature: req.body?.temperature,
+      signal: abortController.signal,
+      onStart: (meta) => {
+        streamStarted = true;
+        res.status(200);
+        res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache, no-transform");
+        res.setHeader("Connection", "keep-alive");
+        res.setHeader("X-Accel-Buffering", "no");
+        res.flushHeaders();
+        writeSseEvent(res, "start", meta);
+      },
+      onToken: (token) => {
+        if (!abortController.signal.aborted && !res.writableEnded) {
+          writeSseEvent(res, "delta", { content: token });
+        }
+      },
+    });
+
+    if (!abortController.signal.aborted && !res.writableEnded) {
+      writeSseEvent(res, "done", {
+        ok: true,
+        conversationId: result.conversation._id,
+        conversation: result.conversation,
+        userMessage: result.userMessage,
+        assistantMessage: result.assistantMessage,
+        meta: result.meta,
+      });
+      res.end();
+    }
+  } catch (error) {
+    if (abortController.signal.aborted) {
+      if (!res.writableEnded) {
+        res.end();
+      }
+      return;
+    }
+
+    if (!streamStarted && !res.headersSent) {
+      next(error);
+      return;
+    }
+
+    if (!res.writableEnded) {
+      const message =
+        error instanceof Error ? error.message : "Streaming error";
+      writeSseEvent(res, "error", { ok: false, error: message });
+      res.end();
+    }
+  }
 });
 
 export { conversationsRouter };

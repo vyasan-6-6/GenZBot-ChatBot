@@ -17,7 +17,7 @@ import {
   fetchHealth,
   regenerateConversationTitle,
   renameConversation,
-  sendConversationMessage,
+  streamConversationMessage,
   type ChatMessage,
   type ConversationSummary,
   type HealthCheckResult,
@@ -43,6 +43,7 @@ export function ChatWorkspace() {
   const [creatingConversation, setCreatingConversation] =
     useState<boolean>(false);
   const [sending, setSending] = useState<boolean>(false);
+  const [streamingContent, setStreamingContent] = useState<string>("");
   const [titling, setTitling] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState<string>("");
@@ -55,6 +56,7 @@ export function ChatWorkspace() {
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const activeIdRef = useRef<string | null>(null);
+  const streamAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     activeIdRef.current = activeConversationId;
@@ -145,7 +147,7 @@ export function ChatWorkspace() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, sending]);
+  }, [messages, sending, streamingContent]);
 
   async function handleNewChat() {
     if (sending || titling || creatingConversation) return;
@@ -267,11 +269,19 @@ export function ChatWorkspace() {
     }
   }
 
+  function handleStopStreaming() {
+    streamAbortRef.current?.abort();
+  }
+
   async function submitMessage() {
     const trimmed = input.trim();
     if (!trimmed || sending || titling) return;
 
+    const abortController = new AbortController();
+    streamAbortRef.current = abortController;
+
     setSending(true);
+    setStreamingContent("");
     setError(null);
     setInput("");
 
@@ -300,10 +310,21 @@ export function ChatWorkspace() {
       setMessages((prev) => [...prev, optimisticUserMessage]);
 
       try {
-        const { result } = await sendConversationMessage(
+        const { result } = await streamConversationMessage(
           targetConversationId,
           trimmed,
-          temperature
+          {
+            temperature,
+            signal: abortController.signal,
+            onStart: (meta) => {
+              if (meta.model) {
+                setModelName(meta.model);
+              }
+            },
+            onToken: (token) => {
+              setStreamingContent((prev) => prev + token);
+            },
+          }
         );
 
         setConversations((prev) => {
@@ -323,9 +344,17 @@ export function ChatWorkspace() {
       } catch (err) {
         setMessages((prev) => prev.filter((msg) => msg._id !== optimisticId));
         setInput(trimmed);
-        setError(
-          err instanceof Error ? err.message : "Failed to get LLM reply"
-        );
+
+        if (
+          err instanceof DOMException &&
+          err.name === "AbortError"
+        ) {
+          setError("Generation stopped.");
+        } else {
+          setError(
+            err instanceof Error ? err.message : "Failed to get LLM reply"
+          );
+        }
       }
     } catch (err) {
       setInput(trimmed);
@@ -333,6 +362,8 @@ export function ChatWorkspace() {
         err instanceof Error ? err.message : "Failed to start conversation"
       );
     } finally {
+      streamAbortRef.current = null;
+      setStreamingContent("");
       setSending(false);
     }
   }
@@ -652,9 +683,9 @@ export function ChatWorkspace() {
                       : "Start a new conversation"}
                   </h2>
                   <p className="muted">
-                    Each conversation keeps its own isolated context window and
-                    gets a smart title automatically after your first turn with{" "}
-                    <code>{modelName}</code>.
+                    Responses stream live token-by-token from{" "}
+                    <code>{modelName}</code> via Server-Sent Events and persist
+                    to MongoDB.
                   </p>
                 </div>
               ) : (
@@ -706,12 +737,24 @@ export function ChatWorkspace() {
 
               {sending && (
                 <article className="bubble-row bubble-row-bot">
-                  <div className="bubble bubble-bot bubble-thinking">
+                  <div className="bubble bubble-bot">
                     <div className="bubble-header">
                       <strong>GenZBot</strong>
+                      <span>streaming...</span>
                     </div>
                     <div className="bubble-content">
-                      Generating response via {modelName}...
+                      {streamingContent ? (
+                        <>
+                          {streamingContent}
+                          <span className="stream-cursor" aria-hidden="true">
+                            &#9610;
+                          </span>
+                        </>
+                      ) : (
+                        <span className="bubble-thinking">
+                          Connecting to {modelName}...
+                        </span>
+                      )}
                     </div>
                   </div>
                 </article>
@@ -733,13 +776,23 @@ export function ChatWorkspace() {
                 disabled={sending}
                 aria-label="Chat message"
               />
-              <button
-                type="submit"
-                disabled={sending || !input.trim()}
-                className="btn-primary"
-              >
-                {sending ? "Sending..." : "Send"}
-              </button>
+              {sending ? (
+                <button
+                  type="button"
+                  onClick={handleStopStreaming}
+                  className="btn-stop"
+                >
+                  Stop
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!input.trim()}
+                  className="btn-primary"
+                >
+                  Send
+                </button>
+              )}
             </form>
           </main>
         </div>

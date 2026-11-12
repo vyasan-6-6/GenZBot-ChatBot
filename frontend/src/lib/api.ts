@@ -332,3 +332,119 @@ export async function sendConversationMessage(
     roundTripMs,
   };
 }
+
+export async function streamConversationMessage(
+  conversationId: string,
+  message: string,
+  options: {
+    temperature?: number;
+    signal?: AbortSignal;
+    onStart?: (meta: { conversationId: string; model: string }) => void;
+    onToken?: (token: string) => void;
+  }
+): Promise<{ result: SendChatResponse; roundTripMs: number }> {
+  const startedAt = performance.now();
+  const response = await fetch(
+    `${API_BASE_URL}/api/conversations/${encodeURIComponent(conversationId)}/messages/stream`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify({
+        message,
+        temperature: options.temperature,
+      }),
+      signal: options.signal,
+    }
+  );
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as {
+      error?: string;
+    };
+    throw new Error(
+      payload.error ?? `Streaming request failed (HTTP ${response.status})`
+    );
+  }
+
+  if (!response.body) {
+    throw new Error("Streaming response body is empty");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let sseBuffer = "";
+  let finalResult: SendChatResponse | null = null;
+
+  const processEventBlock = (rawBlock: string) => {
+    const lines = rawBlock.split("\n");
+    let eventName = "message";
+    const dataLines: string[] = [];
+
+    for (const line of lines) {
+      if (line.startsWith("event:")) {
+        eventName = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        dataLines.push(line.slice(5).trimStart());
+      }
+    }
+
+    if (dataLines.length === 0) return;
+
+    const rawData = dataLines.join("\n");
+    const parsed = JSON.parse(rawData) as Record<string, unknown>;
+
+    if (eventName === "start") {
+      options.onStart?.(parsed as { conversationId: string; model: string });
+    } else if (eventName === "delta") {
+      const content = parsed.content;
+      if (typeof content === "string") {
+        options.onToken?.(content);
+      }
+    } else if (eventName === "done") {
+      finalResult = parsed as unknown as SendChatResponse;
+    } else if (eventName === "error") {
+      const errMsg =
+        typeof parsed.error === "string"
+          ? parsed.error
+          : "Streaming failed on server";
+      throw new Error(errMsg);
+    }
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      sseBuffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+      const blocks = sseBuffer.split("\n\n");
+      sseBuffer = blocks.pop() ?? "";
+
+      for (const block of blocks) {
+        if (block.trim()) {
+          processEventBlock(block);
+        }
+      }
+    }
+
+    sseBuffer += decoder.decode().replace(/\r\n/g, "\n");
+    if (sseBuffer.trim()) {
+      processEventBlock(sseBuffer);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (!finalResult) {
+    throw new Error("Stream ended before completion event was received");
+  }
+
+  const roundTripMs = Number((performance.now() - startedAt).toFixed(2));
+  return {
+    result: finalResult,
+    roundTripMs,
+  };
+}

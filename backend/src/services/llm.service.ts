@@ -40,6 +40,38 @@ export class LlmServiceError extends Error {
   }
 }
 
+function buildCombinedSignal(
+  timeoutMs: number,
+  externalSignal?: AbortSignal
+): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  return externalSignal
+    ? AbortSignal.any([timeoutSignal, externalSignal])
+    : timeoutSignal;
+}
+
+function mapFetchError(
+  error: unknown,
+  timeoutMs: number,
+  externalSignal?: AbortSignal
+): Error {
+  if (externalSignal?.aborted) {
+    return error instanceof Error ? error : new DOMException("Aborted", "AbortError");
+  }
+
+  if (error instanceof DOMException && error.name === "TimeoutError") {
+    return new LlmServiceError(
+      `LLM request timed out after ${timeoutMs} ms`,
+      504
+    );
+  }
+
+  return new LlmServiceError(
+    `Unable to reach Ollama at ${env.llmBaseUrl}. Make sure Ollama is running.`,
+    502
+  );
+}
+
 async function callOllamaChat(payload: {
   model: string;
   messages: LlmMessage[];
@@ -70,17 +102,7 @@ async function callOllamaChat(payload: {
       signal: AbortSignal.timeout(payload.timeoutMs),
     });
   } catch (error) {
-    if (error instanceof DOMException && error.name === "TimeoutError") {
-      throw new LlmServiceError(
-        `LLM request timed out after ${payload.timeoutMs} ms`,
-        504
-      );
-    }
-
-    throw new LlmServiceError(
-      `Unable to reach Ollama at ${env.llmBaseUrl}. Make sure Ollama is running.`,
-      502
-    );
+    throw mapFetchError(error, payload.timeoutMs);
   }
 
   let data: OllamaChatResponse;
@@ -145,6 +167,152 @@ export async function generateChatReply(
     totalTokens,
     durationMs,
     doneReason: data.done_reason,
+  };
+}
+
+export async function generateChatReplyStream(
+  messages: LlmMessage[],
+  options: {
+    model?: string;
+    temperature?: number;
+    signal?: AbortSignal;
+    onToken: (token: string) => void;
+  }
+): Promise<LlmGenerationResult> {
+  const model = options.model ?? env.llmModel;
+  const temperature = options.temperature ?? env.llmTemperature;
+  const startedAt = performance.now();
+  const combinedSignal = buildCombinedSignal(env.llmTimeoutMs, options.signal);
+
+  let response: Response;
+  try {
+    response = await fetch(`${env.llmBaseUrl}/api/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        stream: true,
+        options: {
+          temperature,
+        },
+      }),
+      signal: combinedSignal,
+    });
+  } catch (error) {
+    throw mapFetchError(error, env.llmTimeoutMs, options.signal);
+  }
+
+  if (!response.ok) {
+    let errorMessage = `LLM API error (HTTP ${response.status})`;
+    try {
+      const errorBody = (await response.json()) as { error?: string };
+      if (errorBody.error) {
+        errorMessage = errorBody.error;
+      }
+    } catch {
+      // ignore non-JSON error body
+    }
+    throw new LlmServiceError(errorMessage, 502);
+  }
+
+  if (!response.body) {
+    throw new LlmServiceError("LLM API returned an empty response stream", 502);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let lineBuffer = "";
+  let fullContent = "";
+  let resolvedModel = model;
+  let promptTokens: number | undefined;
+  let completionTokens: number | undefined;
+  let doneReason: string | undefined;
+
+  const processLine = (rawLine: string) => {
+    const trimmed = rawLine.trim();
+    if (!trimmed) return;
+
+    let chunk: OllamaChatResponse;
+    try {
+      chunk = JSON.parse(trimmed) as OllamaChatResponse;
+    } catch {
+      throw new LlmServiceError("Received malformed JSON chunk from LLM stream", 502);
+    }
+
+    if (chunk.error) {
+      throw new LlmServiceError(chunk.error, 502);
+    }
+
+    if (chunk.model) {
+      resolvedModel = chunk.model;
+    }
+
+    const delta = chunk.message?.content;
+    if (typeof delta === "string" && delta.length > 0) {
+      fullContent += delta;
+      options.onToken(delta);
+    }
+
+    if (chunk.done) {
+      doneReason = chunk.done_reason;
+      if (typeof chunk.prompt_eval_count === "number") {
+        promptTokens = chunk.prompt_eval_count;
+      }
+      if (typeof chunk.eval_count === "number") {
+        completionTokens = chunk.eval_count;
+      }
+    }
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      lineBuffer += decoder.decode(value, { stream: true });
+      const lines = lineBuffer.split("\n");
+      lineBuffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        processLine(line);
+      }
+    }
+
+    lineBuffer += decoder.decode();
+    if (lineBuffer.trim()) {
+      processLine(lineBuffer);
+    }
+  } catch (error) {
+    if (error instanceof LlmServiceError) {
+      throw error;
+    }
+    throw mapFetchError(error, env.llmTimeoutMs, options.signal);
+  } finally {
+    reader.releaseLock();
+  }
+
+  const trimmedContent = fullContent.trim();
+  if (!trimmedContent) {
+    throw new LlmServiceError("LLM API returned an empty response", 502);
+  }
+
+  const durationMs = Number((performance.now() - startedAt).toFixed(2));
+  const totalTokens =
+    promptTokens !== undefined && completionTokens !== undefined
+      ? promptTokens + completionTokens
+      : undefined;
+
+  return {
+    content: trimmedContent,
+    model: resolvedModel,
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    durationMs,
+    doneReason,
   };
 }
 
