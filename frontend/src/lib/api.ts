@@ -65,10 +65,27 @@ export interface ConversationSummary {
   title: string;
   titleSource?: "default" | "auto" | "manual";
   systemPrompt?: string;
+  model?: string;
   lastMessagePreview?: string;
   messageCount: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AvailableModel {
+  name: string;
+  sizeBytes?: number;
+  parameterSize?: string;
+  quantization?: string;
+  contextLength?: number;
+  modifiedAt?: string;
+}
+
+export interface ModelsResponse {
+  ok: boolean;
+  defaultModel: string;
+  ollamaReachable: boolean;
+  models: AvailableModel[];
 }
 
 export interface ConversationDetailResponse {
@@ -155,6 +172,25 @@ export async function createEchoEntry(message: string): Promise<{
   };
 }
 
+export async function fetchAvailableModels(): Promise<ModelsResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/models`, {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  const payload = (await response.json()) as ModelsResponse & {
+    error?: string;
+  };
+
+  if (!response.ok || !payload.ok) {
+    throw new Error(
+      payload.error ?? `Failed to load models (HTTP ${response.status})`
+    );
+  }
+
+  return payload;
+}
+
 export async function fetchConversations(): Promise<ConversationSummary[]> {
   const response = await fetch(`${API_BASE_URL}/api/conversations`, {
     method: "GET",
@@ -176,15 +212,16 @@ export async function fetchConversations(): Promise<ConversationSummary[]> {
   return payload.conversations;
 }
 
-export async function createConversation(
-  title?: string
-): Promise<ConversationSummary> {
+export async function createConversation(options?: {
+  title?: string;
+  model?: string;
+}): Promise<ConversationSummary> {
   const response = await fetch(`${API_BASE_URL}/api/conversations`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(title ? { title } : {}),
+    body: JSON.stringify(options ?? {}),
   });
 
   const payload = (await response.json()) as {
@@ -226,9 +263,12 @@ export async function fetchConversationDetail(
   return payload;
 }
 
-export async function renameConversation(
+export async function updateConversation(
   conversationId: string,
-  title: string
+  updates: {
+    title?: string;
+    model?: string;
+  }
 ): Promise<ConversationSummary> {
   const response = await fetch(
     `${API_BASE_URL}/api/conversations/${encodeURIComponent(conversationId)}`,
@@ -237,7 +277,7 @@ export async function renameConversation(
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(updates),
     }
   );
 
@@ -249,11 +289,18 @@ export async function renameConversation(
 
   if (!response.ok || !payload.ok || !payload.conversation) {
     throw new Error(
-      payload.error ?? `Failed to rename conversation (HTTP ${response.status})`
+      payload.error ?? `Failed to update conversation (HTTP ${response.status})`
     );
   }
 
   return payload.conversation;
+}
+
+export async function renameConversation(
+  conversationId: string,
+  title: string
+): Promise<ConversationSummary> {
+  return updateConversation(conversationId, { title });
 }
 
 export async function regenerateConversationTitle(
@@ -338,6 +385,7 @@ export async function streamConversationMessage(
   message: string,
   options: {
     temperature?: number;
+    model?: string;
     signal?: AbortSignal;
     onStart?: (meta: { conversationId: string; model: string }) => void;
     onToken?: (token: string) => void;
@@ -355,6 +403,7 @@ export async function streamConversationMessage(
       body: JSON.stringify({
         message,
         temperature: options.temperature,
+        model: options.model,
       }),
       signal: options.signal,
     }

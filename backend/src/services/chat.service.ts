@@ -46,6 +46,27 @@ export function validateTemperature(rawTemp: unknown): number {
   return parsed;
 }
 
+export function validateModelInput(rawModel: unknown): string | undefined {
+  if (rawModel === undefined || rawModel === null) {
+    return undefined;
+  }
+
+  if (typeof rawModel !== "string") {
+    throw new HttpError(400, "Model must be a string.");
+  }
+
+  const trimmed = rawModel.trim();
+  if (!trimmed) {
+    throw new HttpError(400, "Model name cannot be empty.");
+  }
+
+  if (trimmed.length > 100) {
+    throw new HttpError(400, "Model name cannot exceed 100 characters.");
+  }
+
+  return trimmed;
+}
+
 function collapseWhitespace(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
@@ -66,6 +87,7 @@ async function prepareConversationTurn(params: {
   conversationId: string;
   message: unknown;
   temperature?: unknown;
+  model?: unknown;
 }) {
   ensureDatabaseReady();
 
@@ -75,11 +97,14 @@ async function prepareConversationTurn(params: {
 
   const userText = validateMessageInput(params.message);
   const temperature = validateTemperature(params.temperature);
+  const requestedModel = validateModelInput(params.model);
 
   const conversation = await Conversation.findById(params.conversationId).lean();
   if (!conversation) {
     throw new HttpError(404, "Conversation not found");
   }
+
+  const selectedModel = requestedModel ?? conversation.model ?? env.llmModel;
 
   const recentHistory = await ChatMessage.find({
     conversationId: conversation._id,
@@ -105,6 +130,7 @@ async function prepareConversationTurn(params: {
     conversation,
     userText,
     temperature,
+    selectedModel,
     llmMessages,
   };
 }
@@ -115,11 +141,18 @@ async function persistConversationTurn(params: {
   >;
   userText: string;
   temperature: number;
+  selectedModel: string;
   contextMessagesSent: number;
   reply: LlmGenerationResult;
 }) {
-  const { conversation, userText, temperature, contextMessagesSent, reply } =
-    params;
+  const {
+    conversation,
+    userText,
+    temperature,
+    selectedModel,
+    contextMessagesSent,
+    reply,
+  } = params;
 
   const userCreatedAt = new Date();
   const userMessage = await ChatMessage.create({
@@ -161,10 +194,13 @@ async function persistConversationTurn(params: {
   let nextTitle: string | undefined;
   if (shouldAutoTitle) {
     try {
-      nextTitle = await generateConversationTitle([
-        { role: "user", content: userText },
-        { role: "assistant", content: reply.content },
-      ]);
+      nextTitle = await generateConversationTitle(
+        [
+          { role: "user", content: userText },
+          { role: "assistant", content: reply.content },
+        ],
+        { model: selectedModel }
+      );
     } catch (titleError) {
       console.warn("[Title] Falling back to prompt snippet:", titleError);
       nextTitle = buildAutoTitle(userText);
@@ -178,6 +214,7 @@ async function persistConversationTurn(params: {
       $set: {
         updatedAt: assistantCreatedAt,
         lastMessagePreview: buildPreview(reply.content),
+        model: selectedModel,
         ...(nextTitle ? { title: nextTitle, titleSource: "auto" } : {}),
       },
     },
@@ -200,9 +237,11 @@ export async function sendMessageToConversation(params: {
   conversationId: string;
   message: unknown;
   temperature?: unknown;
+  model?: unknown;
 }) {
   const prepared = await prepareConversationTurn(params);
   const reply = await generateChatReply(prepared.llmMessages, {
+    model: prepared.selectedModel,
     temperature: prepared.temperature,
   });
 
@@ -210,6 +249,7 @@ export async function sendMessageToConversation(params: {
     conversation: prepared.conversation,
     userText: prepared.userText,
     temperature: prepared.temperature,
+    selectedModel: prepared.selectedModel,
     contextMessagesSent: prepared.llmMessages.length,
     reply,
   });
@@ -219,6 +259,7 @@ export async function streamMessageToConversation(params: {
   conversationId: string;
   message: unknown;
   temperature?: unknown;
+  model?: unknown;
   signal?: AbortSignal;
   onStart: (meta: { conversationId: string; model: string }) => void;
   onToken: (token: string) => void;
@@ -227,10 +268,11 @@ export async function streamMessageToConversation(params: {
 
   params.onStart({
     conversationId: String(prepared.conversation._id),
-    model: env.llmModel,
+    model: prepared.selectedModel,
   });
 
   const reply = await generateChatReplyStream(prepared.llmMessages, {
+    model: prepared.selectedModel,
     temperature: prepared.temperature,
     signal: params.signal,
     onToken: params.onToken,
@@ -240,6 +282,7 @@ export async function streamMessageToConversation(params: {
     conversation: prepared.conversation,
     userText: prepared.userText,
     temperature: prepared.temperature,
+    selectedModel: prepared.selectedModel,
     contextMessagesSent: prepared.llmMessages.length,
     reply,
   });
@@ -274,7 +317,9 @@ export async function regenerateConversationTitle(conversationId: string) {
     content: msg.content,
   }));
 
-  const generatedTitle = await generateConversationTitle(turns);
+  const generatedTitle = await generateConversationTitle(turns, {
+    model: conversation.model ?? env.llmModel,
+  });
 
   const updated = await Conversation.findByIdAndUpdate(
     conversation._id,

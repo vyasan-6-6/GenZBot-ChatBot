@@ -9,6 +9,7 @@ import {
   regenerateConversationTitle,
   sendMessageToConversation,
   streamMessageToConversation,
+  validateModelInput,
 } from "../services/chat.service.js";
 
 const conversationsRouter = Router();
@@ -58,10 +59,13 @@ conversationsRouter.post("/", async (req, res) => {
       ? req.body.systemPrompt.trim()
       : "";
 
+  const model = validateModelInput(req.body?.model) ?? env.llmModel;
+
   const conversation = await Conversation.create({
     title,
     titleSource: hasCustomTitle ? "manual" : "default",
     systemPrompt: rawSystemPrompt || env.llmSystemPrompt,
+    model,
     messageCount: 0,
   });
 
@@ -88,7 +92,7 @@ conversationsRouter.get("/:id", async (req, res) => {
     ok: true,
     conversation,
     messages,
-    model: env.llmModel,
+    model: conversation.model ?? env.llmModel,
     temperature: env.llmTemperature,
   });
 });
@@ -97,20 +101,38 @@ conversationsRouter.patch("/:id", async (req, res) => {
   ensureDatabaseReady();
   assertValidObjectId(req.params.id);
 
-  const title =
-    typeof req.body?.title === "string" ? req.body.title.trim() : "";
+  const updates: Record<string, unknown> = {};
 
-  if (!title) {
-    throw new HttpError(400, "Please provide a non-empty 'title' string.");
+  if (req.body?.title !== undefined) {
+    const title =
+      typeof req.body.title === "string" ? req.body.title.trim() : "";
+    if (!title) {
+      throw new HttpError(400, "Please provide a non-empty 'title' string.");
+    }
+    if (title.length > 120) {
+      throw new HttpError(
+        400,
+        "Conversation title cannot exceed 120 characters."
+      );
+    }
+    updates.title = title;
+    updates.titleSource = "manual";
   }
 
-  if (title.length > 120) {
-    throw new HttpError(400, "Conversation title cannot exceed 120 characters.");
+  if (req.body?.model !== undefined) {
+    updates.model = validateModelInput(req.body.model);
+  }
+
+  if (Object.keys(updates).length === 0) {
+    throw new HttpError(
+      400,
+      "Provide at least one field to update ('title' or 'model')."
+    );
   }
 
   const updated = await Conversation.findByIdAndUpdate(
     req.params.id,
-    { $set: { title, titleSource: "manual" } },
+    { $set: updates },
     { returnDocument: "after", runValidators: true }
   ).lean();
 
@@ -158,6 +180,7 @@ conversationsRouter.post("/:id/messages", async (req, res) => {
     conversationId: req.params.id,
     message: req.body?.message,
     temperature: req.body?.temperature,
+    model: req.body?.model,
   });
 
   res.status(201).json({
@@ -185,6 +208,7 @@ conversationsRouter.post("/:id/messages/stream", async (req, res, next) => {
       conversationId: req.params.id,
       message: req.body?.message,
       temperature: req.body?.temperature,
+      model: req.body?.model,
       signal: abortController.signal,
       onStart: (meta) => {
         streamStarted = true;

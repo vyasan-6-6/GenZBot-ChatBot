@@ -375,3 +375,73 @@ export async function generateConversationTitle(
 
   return sanitized;
 }
+
+
+export interface AvailableModel {
+  name: string;
+  sizeBytes?: number;
+  parameterSize?: string;
+  quantization?: string;
+  contextLength?: number;
+  modifiedAt?: string;
+}
+
+interface OllamaTagsResponse {
+  models?: Array<{
+    name?: string;
+    size?: number;
+    modified_at?: string;
+    details?: {
+      parameter_size?: string;
+      quantization_level?: string;
+      context_length?: number;
+    };
+  }>;
+}
+
+export async function listAvailableModels(): Promise<{
+  ollamaReachable: boolean;
+  models: AvailableModel[];
+}> {
+  try {
+    const response = await fetch(`${env.llmBaseUrl}/api/tags`, {
+      method: "GET",
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!response.ok) {
+      return {
+        ollamaReachable: false,
+        models: [{ name: env.llmModel }],
+      };
+    }
+
+    const data = (await response.json()) as OllamaTagsResponse;
+    const models: AvailableModel[] = (data.models ?? [])
+      .filter((item): item is NonNullable<typeof item> & { name: string } =>
+        Boolean(item?.name)
+      )
+      .map((item) => ({
+        name: item.name,
+        sizeBytes: item.size,
+        parameterSize: item.details?.parameter_size,
+        quantization: item.details?.quantization_level,
+        contextLength: item.details?.context_length,
+        modifiedAt: item.modified_at,
+      }));
+
+    if (!models.some((m) => m.name === env.llmModel)) {
+      models.unshift({ name: env.llmModel });
+    }
+
+    return {
+      ollamaReachable: true,
+      models,
+    };
+  } catch {
+    return {
+      ollamaReachable: false,
+      models: [{ name: env.llmModel }],
+    };
+  }
+}

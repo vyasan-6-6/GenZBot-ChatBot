@@ -26,6 +26,11 @@ const conversationSchema = new Schema(
       type: String,
       trim: true,
     },
+    model: {
+      type: String,
+      trim: true,
+      maxlength: [100, "Model name cannot exceed 100 characters"],
+    },
     lastMessagePreview: {
       type: String,
       trim: true,

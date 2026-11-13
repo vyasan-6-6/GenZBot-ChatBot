@@ -6,6 +6,7 @@ import { chatRouter } from "./routes/chat.routes.js";
 import { conversationsRouter } from "./routes/conversations.routes.js";
 import { echoRouter } from "./routes/echo.routes.js";
 import { healthRouter } from "./routes/health.routes.js";
+import { modelsRouter } from "./routes/models.routes.js";
 
 export function createApp() {
   const app = express();
@@ -37,6 +38,7 @@ export function createApp() {
       status: "running",
       endpoints: {
         health: "/api/health",
+        models: "/api/models",
         conversations: "/api/conversations",
         chat: "/api/chat",
         chatHistory: "/api/chat/history",
@@ -46,6 +48,7 @@ export function createApp() {
   });
 
   app.use("/api/health", healthRouter);
+  app.use("/api/models", modelsRouter);
   app.use("/api/conversations", conversationsRouter);
   app.use("/api/chat", chatRouter);
   app.use("/api/echo", echoRouter);

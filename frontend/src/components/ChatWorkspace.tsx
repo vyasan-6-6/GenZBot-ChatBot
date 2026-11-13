@@ -16,12 +16,15 @@ import {
 import {
   createConversation,
   deleteConversation,
+  fetchAvailableModels,
   fetchConversationDetail,
   fetchConversations,
   fetchHealth,
   regenerateConversationTitle,
   renameConversation,
   streamConversationMessage,
+  updateConversation,
+  type AvailableModel,
   type ChatMessage,
   type ConversationSummary,
   type HealthCheckResult,
@@ -38,6 +41,7 @@ export function ChatWorkspace() {
     string | null
   >(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
   const [modelName, setModelName] = useState<string>("qwen2.5:3b");
   const [temperature, setTemperature] = useState<number>(0.7);
 
@@ -106,10 +110,12 @@ export function ChatWorkspace() {
     setLoadingConversations(true);
     setError(null);
 
-    const [healthOutcome, conversationsOutcome] = await Promise.allSettled([
-      fetchHealth(),
-      fetchConversations(),
-    ]);
+    const [healthOutcome, conversationsOutcome, modelsOutcome] =
+      await Promise.allSettled([
+        fetchHealth(),
+        fetchConversations(),
+        fetchAvailableModels(),
+      ]);
 
     if (healthOutcome.status === "fulfilled") {
       setHealth(healthOutcome.value);
@@ -124,6 +130,13 @@ export function ChatWorkspace() {
           ? healthOutcome.reason.message
           : "Backend unreachable"
       );
+    }
+
+    if (modelsOutcome.status === "fulfilled") {
+      setAvailableModels(modelsOutcome.value.models);
+      if (modelsOutcome.value.defaultModel) {
+        setModelName((prev) => prev || modelsOutcome.value.defaultModel);
+      }
     }
 
     if (conversationsOutcome.status === "fulfilled") {
@@ -162,7 +175,10 @@ export function ChatWorkspace() {
     setEditingHeaderTitle(false);
 
     try {
-      const created = await createConversation("New Chat");
+      const created = await createConversation({
+        title: "New Chat",
+        model: modelName,
+      });
       setConversations((prev) => [created, ...prev]);
       setActiveConversationId(created._id);
       activeIdRef.current = created._id;
@@ -288,6 +304,24 @@ export function ChatWorkspace() {
     }
   }
 
+  async function handleModelChange(nextModel: string) {
+    setModelName(nextModel);
+    if (!activeConversationId) return;
+
+    try {
+      const updated = await updateConversation(activeConversationId, {
+        model: nextModel,
+      });
+      setConversations((prev) =>
+        prev.map((c) => (c._id === updated._id ? updated : c))
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to switch conversation model"
+      );
+    }
+  }
+
   async function submitMessage() {
     const trimmed = input.trim();
     if (!trimmed || sending || titling) return;
@@ -305,7 +339,10 @@ export function ChatWorkspace() {
 
     try {
       if (!targetConversationId) {
-        createdOnSend = await createConversation("New Chat");
+        createdOnSend = await createConversation({
+          title: "New Chat",
+          model: modelName,
+        });
         targetConversationId = createdOnSend._id;
         setConversations((prev) => [createdOnSend!, ...prev]);
         setActiveConversationId(targetConversationId);
@@ -330,6 +367,7 @@ export function ChatWorkspace() {
           trimmed,
           {
             temperature,
+            model: modelName,
             signal: abortController.signal,
             onStart: (meta) => {
               if (meta.model) {
@@ -644,6 +682,27 @@ export function ChatWorkspace() {
               </div>
 
               <div className="toolbar-controls">
+                <div className="temp-control">
+                  <label htmlFor="model-select">Model</label>
+                  <select
+                    id="model-select"
+                    value={modelName}
+                    onChange={(e) => void handleModelChange(e.target.value)}
+                    disabled={sending || titling}
+                  >
+                    {(availableModels.some((m) => m.name === modelName)
+                      ? availableModels
+                      : [{ name: modelName }, ...availableModels]
+                    ).map((m) => (
+                      <option key={m.name} value={m.name}>
+                        {m.parameterSize
+                          ? `${m.name} (${m.parameterSize})`
+                          : m.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="temp-control">
                   <label htmlFor="temp-select">Temperature</label>
                   <select
