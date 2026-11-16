@@ -44,6 +44,11 @@ export function ChatWorkspace() {
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
   const [modelName, setModelName] = useState<string>("qwen2.5:3b");
   const [temperature, setTemperature] = useState<number>(0.7);
+  const [systemPrompt, setSystemPrompt] = useState<string>(
+    "You are GenZBot, a helpful, concise, and friendly AI assistant."
+  );
+  const [showPromptModal, setShowPromptModal] = useState<boolean>(false);
+  const [promptDraft, setPromptDraft] = useState<string>("");
 
   const [loadingConversations, setLoadingConversations] =
     useState<boolean>(true);
@@ -93,6 +98,10 @@ export function ChatWorkspace() {
       setMessages(detail.messages);
       setModelName(detail.model);
       setTemperature(detail.temperature);
+      setSystemPrompt(
+        detail.conversation.systemPrompt ||
+          "You are GenZBot, a helpful, concise, and friendly AI assistant."
+      );
     } catch (err) {
       if (activeIdRef.current !== conversationId) return;
       setMessages([]);
@@ -318,6 +327,29 @@ export function ChatWorkspace() {
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to switch conversation model"
+      );
+    }
+  }
+
+  async function handleSaveSystemPrompt(newPrompt: string) {
+    const trimmed = newPrompt.trim();
+    if (!activeConversationId) return;
+
+    try {
+      const updated = await updateConversation(activeConversationId, {
+        systemPrompt: trimmed,
+      });
+      setConversations((prev) =>
+        prev.map((c) => (c._id === updated._id ? updated : c))
+      );
+      setSystemPrompt(
+        updated.systemPrompt ||
+          "You are GenZBot, a helpful, concise, and friendly AI assistant."
+      );
+      setShowPromptModal(false);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to update system prompt"
       );
     }
   }
@@ -732,6 +764,21 @@ export function ChatWorkspace() {
                 {activeConversation && (
                   <button
                     type="button"
+                    onClick={() => {
+                      setPromptDraft(systemPrompt);
+                      setShowPromptModal(true);
+                    }}
+                    disabled={sending || titling}
+                    className="btn-secondary"
+                    title="Customize system instructions for this conversation"
+                  >
+                    System Prompt
+                  </button>
+                )}
+
+                {activeConversation && (
+                  <button
+                    type="button"
                     onClick={() =>
                       void handleDeleteConversation(activeConversation._id)
                     }
@@ -888,6 +935,122 @@ export function ChatWorkspace() {
               )}
             </form>
           </main>
+        </div>
+      )}
+
+      {showPromptModal && (
+        <div
+          className="modal-overlay"
+          onClick={() => setShowPromptModal(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="prompt-modal-title"
+        >
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h2 id="prompt-modal-title">Custom System Prompt</h2>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => setShowPromptModal(false)}
+                aria-label="Close modal"
+              >
+                &times;
+              </button>
+            </div>
+
+            <p className="muted modal-subtitle">
+              Steer how GenZBot behaves in this conversation (sets the AI’s
+              personality, rules, and boundaries).
+            </p>
+
+            <div className="prompt-presets">
+              <span className="preset-label">Presets:</span>
+              <button
+                type="button"
+                className="preset-chip"
+                onClick={() =>
+                  setPromptDraft(
+                    "You are GenZBot, a helpful, concise, and friendly AI assistant."
+                  )
+                }
+              >
+                Default Assistant
+              </button>
+              <button
+                type="button"
+                className="preset-chip"
+                onClick={() =>
+                  setPromptDraft(
+                    "You are an expert software engineer and code mentor. Write clean, idiomatic TypeScript and explain step-by-step."
+                  )
+                }
+              >
+                Code Mentor
+              </button>
+              <button
+                type="button"
+                className="preset-chip"
+                onClick={() =>
+                  setPromptDraft(
+                    "Be extremely concise, direct, and factual. Answer in 1 to 3 sentences without conversational filler."
+                  )
+                }
+              >
+                Concise & Direct
+              </button>
+              <button
+                type="button"
+                className="preset-chip"
+                onClick={() =>
+                  setPromptDraft(
+                    "You are a Socratic tutor. Guide the user to the answer by asking thoughtful, probing questions."
+                  )
+                }
+              >
+                Socratic Tutor
+              </button>
+            </div>
+
+            <textarea
+              className="prompt-textarea"
+              rows={5}
+              value={promptDraft}
+              onChange={(e) => setPromptDraft(e.target.value)}
+              maxLength={2000}
+              placeholder="e.g. You are a senior frontend developer who speaks in pirate slang..."
+              aria-label="System prompt text"
+            />
+
+            <div className="modal-footer">
+              <span className="muted prompt-count">
+                {promptDraft.length} / 2000
+              </span>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() =>
+                    setPromptDraft(
+                      "You are GenZBot, a helpful, concise, and friendly AI assistant."
+                    )
+                  }
+                >
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => void handleSaveSystemPrompt(promptDraft)}
+                >
+                  Save Prompt
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

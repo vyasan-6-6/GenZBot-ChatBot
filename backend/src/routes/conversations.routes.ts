@@ -123,10 +123,24 @@ conversationsRouter.patch("/:id", async (req, res) => {
     updates.model = validateModelInput(req.body.model);
   }
 
+  if (req.body?.systemPrompt !== undefined) {
+    const rawPrompt =
+      typeof req.body.systemPrompt === "string"
+        ? req.body.systemPrompt.trim()
+        : "";
+    if (rawPrompt.length > 2000) {
+      throw new HttpError(
+        400,
+        "System prompt cannot exceed 2000 characters."
+      );
+    }
+    updates.systemPrompt = rawPrompt || env.llmSystemPrompt;
+  }
+
   if (Object.keys(updates).length === 0) {
     throw new HttpError(
       400,
-      "Provide at least one field to update ('title' or 'model')."
+      "Provide at least one field to update ('title', 'model', or 'systemPrompt')."
     );
   }
 

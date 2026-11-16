@@ -215,6 +215,7 @@ export async function fetchConversations(): Promise<ConversationSummary[]> {
 export async function createConversation(options?: {
   title?: string;
   model?: string;
+  systemPrompt?: string;
 }): Promise<ConversationSummary> {
   const response = await fetch(`${API_BASE_URL}/api/conversations`, {
     method: "POST",
@@ -268,6 +269,7 @@ export async function updateConversation(
   updates: {
     title?: string;
     model?: string;
+    systemPrompt?: string;
   }
 ): Promise<ConversationSummary> {
   const response = await fetch(
