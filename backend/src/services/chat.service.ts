@@ -7,6 +7,7 @@ import {
   generateChatReply,
   generateChatReplyStream,
   generateConversationTitle,
+  generateFollowUpSuggestions,
   type LlmGenerationResult,
   type LlmMessage,
 } from "./llm.service.js";
@@ -144,6 +145,7 @@ async function persistConversationTurn(params: {
   selectedModel: string;
   contextMessagesSent: number;
   reply: LlmGenerationResult;
+  suggestedQuestions?: string[];
 }) {
   const {
     conversation,
@@ -152,6 +154,7 @@ async function persistConversationTurn(params: {
     selectedModel,
     contextMessagesSent,
     reply,
+    suggestedQuestions,
   } = params;
 
   const userCreatedAt = new Date();
@@ -183,6 +186,10 @@ async function persistConversationTurn(params: {
     model: reply.model,
     usage,
     durationMs: reply.durationMs,
+    suggestedQuestions:
+      suggestedQuestions && suggestedQuestions.length > 0
+        ? suggestedQuestions
+        : undefined,
     createdAt: assistantCreatedAt,
     updatedAt: assistantCreatedAt,
   });
@@ -245,6 +252,19 @@ export async function sendMessageToConversation(params: {
     temperature: prepared.temperature,
   });
 
+  let suggestedQuestions: string[] = [];
+  try {
+    suggestedQuestions = await generateFollowUpSuggestions(
+      [
+        { role: "user", content: prepared.userText },
+        { role: "assistant", content: reply.content },
+      ],
+      { model: prepared.selectedModel }
+    );
+  } catch (err) {
+    console.warn("[FollowUp] Failed to generate suggestions:", err);
+  }
+
   return persistConversationTurn({
     conversation: prepared.conversation,
     userText: prepared.userText,
@@ -252,6 +272,7 @@ export async function sendMessageToConversation(params: {
     selectedModel: prepared.selectedModel,
     contextMessagesSent: prepared.llmMessages.length,
     reply,
+    suggestedQuestions,
   });
 }
 
@@ -263,6 +284,7 @@ export async function streamMessageToConversation(params: {
   signal?: AbortSignal;
   onStart: (meta: { conversationId: string; model: string }) => void;
   onToken: (token: string) => void;
+  onSuggestions?: (suggestions: string[]) => void;
 }) {
   const prepared = await prepareConversationTurn(params);
 
@@ -278,6 +300,24 @@ export async function streamMessageToConversation(params: {
     onToken: params.onToken,
   });
 
+  let suggestedQuestions: string[] = [];
+  if (!params.signal?.aborted && reply.content.trim()) {
+    try {
+      suggestedQuestions = await generateFollowUpSuggestions(
+        [
+          { role: "user", content: prepared.userText },
+          { role: "assistant", content: reply.content },
+        ],
+        { model: prepared.selectedModel }
+      );
+      if (suggestedQuestions.length > 0) {
+        params.onSuggestions?.(suggestedQuestions);
+      }
+    } catch (err) {
+      console.warn("[FollowUp] Failed to generate stream suggestions:", err);
+    }
+  }
+
   return persistConversationTurn({
     conversation: prepared.conversation,
     userText: prepared.userText,
@@ -285,6 +325,7 @@ export async function streamMessageToConversation(params: {
     selectedModel: prepared.selectedModel,
     contextMessagesSent: prepared.llmMessages.length,
     reply,
+    suggestedQuestions,
   });
 }
 

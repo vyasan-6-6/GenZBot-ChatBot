@@ -354,8 +354,8 @@ export function ChatWorkspace() {
     }
   }
 
-  async function submitMessage() {
-    const trimmed = input.trim();
+  async function submitMessage(explicitText?: string) {
+    const trimmed = (explicitText !== undefined ? explicitText : input).trim();
     if (!trimmed || sending || titling) return;
 
     const abortController = new AbortController();
@@ -364,7 +364,9 @@ export function ChatWorkspace() {
     setSending(true);
     setStreamingContent("");
     setError(null);
-    setInput("");
+    if (explicitText === undefined) {
+      setInput("");
+    }
 
     let targetConversationId = activeConversationId;
     let createdOnSend: ConversationSummary | null = null;
@@ -428,7 +430,9 @@ export function ChatWorkspace() {
         }
       } catch (err) {
         setMessages((prev) => prev.filter((msg) => msg._id !== optimisticId));
-        setInput(trimmed);
+        if (explicitText === undefined) {
+          setInput(trimmed);
+        }
 
         if (
           err instanceof DOMException &&
@@ -442,7 +446,9 @@ export function ChatWorkspace() {
         }
       }
     } catch (err) {
-      setInput(trimmed);
+      if (explicitText === undefined) {
+        setInput(trimmed);
+      }
       setError(
         err instanceof Error ? err.message : "Failed to start conversation"
       );
@@ -810,69 +816,107 @@ export function ChatWorkspace() {
                   </p>
                 </div>
               ) : (
-                messages.map((msg) => (
-                  <article
-                    key={msg._id}
-                    className={`bubble-row ${
-                      msg.role === "user" ? "bubble-row-user" : "bubble-row-bot"
-                    }`}
-                  >
-                    <div
-                      className={`bubble ${
-                        msg.role === "user" ? "bubble-user" : "bubble-bot"
+                messages.map((msg, index) => {
+                  const isLatestAssistant =
+                    msg.role === "assistant" &&
+                    index === messages.length - 1;
+
+                  return (
+                    <article
+                      key={msg._id}
+                      className={`bubble-row ${
+                        msg.role === "user"
+                          ? "bubble-row-user"
+                          : "bubble-row-bot"
                       }`}
                     >
-                      <div className="bubble-header">
-                        <strong>
-                          {msg.role === "user" ? "You" : "GenZBot"}
-                        </strong>
-                        <div className="bubble-header-actions">
-                          {msg.role === "assistant" && (
-                            <button
-                              type="button"
-                              className="icon-btn"
-                              onClick={() =>
-                                void handleCopyMessage(msg._id, msg.content)
-                              }
-                            >
-                              {copiedMessageId === msg._id ? "Copied!" : "Copy"}
-                            </button>
-                          )}
-                          <span>
-                            {new Date(msg.createdAt).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="bubble-content">
-                        {msg.role === "assistant" ? (
-                          <MarkdownMessage content={msg.content} />
-                        ) : (
-                          msg.content
-                        )}
-                      </div>
-                      {msg.role === "assistant" &&
-                        (msg.usage || msg.durationMs !== undefined) && (
-                          <div className="bubble-meta">
-                            {msg.model && <span>{msg.model}</span>}
-                            {msg.usage?.promptTokens !== undefined && (
-                              <span>in: {msg.usage.promptTokens} tok</span>
+                      <div
+                        className={`bubble ${
+                          msg.role === "user" ? "bubble-user" : "bubble-bot"
+                        }`}
+                      >
+                        <div className="bubble-header">
+                          <strong>
+                            {msg.role === "user" ? "You" : "GenZBot"}
+                          </strong>
+                          <div className="bubble-header-actions">
+                            {msg.role === "assistant" && (
+                              <button
+                                type="button"
+                                className="icon-btn"
+                                onClick={() =>
+                                  void handleCopyMessage(msg._id, msg.content)
+                                }
+                              >
+                                {copiedMessageId === msg._id
+                                  ? "Copied!"
+                                  : "Copy"}
+                              </button>
                             )}
-                            {msg.usage?.completionTokens !== undefined && (
-                              <span>out: {msg.usage.completionTokens} tok</span>
-                            )}
-                            {msg.durationMs !== undefined && (
-                              <span>
-                                {(msg.durationMs / 1000).toFixed(2)}s
-                              </span>
-                            )}
+                            <span>
+                              {new Date(msg.createdAt).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
                           </div>
-                        )}
-                    </div>
-                  </article>
-                ))
+                        </div>
+                        <div className="bubble-content">
+                          {msg.role === "assistant" ? (
+                            <MarkdownMessage content={msg.content} />
+                          ) : (
+                            msg.content
+                          )}
+                        </div>
+                        {msg.role === "assistant" &&
+                          (msg.usage || msg.durationMs !== undefined) && (
+                            <div className="bubble-meta">
+                              {msg.model && <span>{msg.model}</span>}
+                              {msg.usage?.promptTokens !== undefined && (
+                                <span>in: {msg.usage.promptTokens} tok</span>
+                              )}
+                              {msg.usage?.completionTokens !== undefined && (
+                                <span>out: {msg.usage.completionTokens} tok</span>
+                              )}
+                              {msg.durationMs !== undefined && (
+                                <span>
+                                  {(msg.durationMs / 1000).toFixed(2)}s
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                        {isLatestAssistant &&
+                          msg.suggestedQuestions &&
+                          msg.suggestedQuestions.length > 0 &&
+                          !sending && (
+                            <div className="followup-container">
+                              <div className="followup-header">
+                                <span className="followup-sparkle">✦</span>
+                                <span className="followup-title">
+                                  Suggested follow-ups
+                                </span>
+                              </div>
+                              <div className="followup-chips">
+                                {msg.suggestedQuestions.map((q, qIdx) => (
+                                  <button
+                                    key={qIdx}
+                                    type="button"
+                                    className="followup-chip"
+                                    disabled={sending || titling}
+                                    onClick={() => void submitMessage(q)}
+                                  >
+                                    <span>{q}</span>
+                                    <span className="followup-arrow">&rarr;</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                      </div>
+                    </article>
+                  );
+                })
               )}
 
               {sending && (

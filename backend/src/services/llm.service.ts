@@ -78,6 +78,7 @@ async function callOllamaChat(payload: {
   temperature: number;
   numPredict?: number;
   timeoutMs: number;
+  format?: string;
 }): Promise<{ data: OllamaChatResponse; durationMs: number }> {
   const startedAt = performance.now();
 
@@ -92,6 +93,7 @@ async function callOllamaChat(payload: {
         model: payload.model,
         messages: payload.messages,
         stream: false,
+        ...(payload.format ? { format: payload.format } : {}),
         options: {
           temperature: payload.temperature,
           ...(payload.numPredict !== undefined
@@ -374,6 +376,82 @@ export async function generateConversationTitle(
   }
 
   return sanitized;
+}
+
+export async function generateFollowUpSuggestions(
+  turns: Array<{ role: "user" | "assistant"; content: string }>,
+  options?: { model?: string }
+): Promise<string[]> {
+  try {
+    const recentTurns = turns
+      .slice(-4)
+      .map((turn) => {
+        const label = turn.role === "user" ? "User" : "Assistant";
+        const snippet = turn.content.replace(/\s+/g, " ").trim().slice(0, 300);
+        return `${label}: ${snippet}`;
+      })
+      .join("\n");
+
+    const { data } = await callOllamaChat({
+      model: options?.model ?? env.llmModel,
+      messages: [
+        {
+          role: "system",
+          content:
+            'Based on the conversation, suggest exactly 3 short, relevant follow-up questions the user might ask next. Output a valid JSON object with a "questions" key containing an array of 3 brief strings (under 60 characters each). Do not include conversational filler.',
+        },
+        {
+          role: "user",
+          content: recentTurns,
+        },
+      ],
+      temperature: 0.3,
+      numPredict: 120,
+      format: "json",
+      timeoutMs: Math.min(env.llmTimeoutMs, 15_000),
+    });
+
+    const raw = data.message?.content?.trim() ?? "";
+    if (!raw) return [];
+
+    let parsed: Record<string, unknown> | unknown[] = {};
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      const match = raw.match(/\{[\s\S]*\}/) ?? raw.match(/\[[\s\S]*\]/);
+      if (match) {
+        parsed = JSON.parse(match[0]);
+      }
+    }
+
+    let candidates: unknown[] = [];
+    if (Array.isArray(parsed)) {
+      candidates = parsed;
+    } else if (
+      parsed &&
+      typeof parsed === "object" &&
+      Array.isArray((parsed as { questions?: unknown }).questions)
+    ) {
+      candidates = (parsed as { questions: unknown[] }).questions;
+    }
+
+    const suggestions = candidates
+      .filter((item): item is string => typeof item === "string")
+      .map((item) =>
+        item
+          .replace(/^\d+[\.\)]\s*/, "")
+          .replace(/^[-*•]\s*/, "")
+          .replace(/^["']|["']$/g, "")
+          .trim()
+      )
+      .filter((item) => item.length >= 4 && item.length <= 100)
+      .slice(0, 3);
+
+    return suggestions;
+  } catch (err) {
+    console.warn("[FollowUps] Failed to generate follow-up suggestions:", err);
+    return [];
+  }
 }
 
 

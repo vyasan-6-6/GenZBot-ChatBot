@@ -40,6 +40,10 @@ const chatMessageSchema = new Schema(
     durationMs: {
       type: Number,
     },
+    suggestedQuestions: {
+      type: [String],
+      default: undefined,
+    },
   },
   {
     timestamps: true,

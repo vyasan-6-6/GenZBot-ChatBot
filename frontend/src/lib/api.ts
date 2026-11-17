@@ -55,6 +55,7 @@ export interface ChatMessage {
   model?: string;
   usage?: ChatTokenUsage;
   durationMs?: number;
+  suggestedQuestions?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -391,6 +392,7 @@ export async function streamConversationMessage(
     signal?: AbortSignal;
     onStart?: (meta: { conversationId: string; model: string }) => void;
     onToken?: (token: string) => void;
+    onSuggestions?: (suggestions: string[]) => void;
   }
 ): Promise<{ result: SendChatResponse; roundTripMs: number }> {
   const startedAt = performance.now();
@@ -453,6 +455,13 @@ export async function streamConversationMessage(
       const content = parsed.content;
       if (typeof content === "string") {
         options.onToken?.(content);
+      }
+    } else if (eventName === "suggestions") {
+      const suggestions = (parsed as { suggestions?: unknown }).suggestions;
+      if (Array.isArray(suggestions)) {
+        options.onSuggestions?.(
+          suggestions.filter((item): item is string => typeof item === "string")
+        );
       }
     } else if (eventName === "done") {
       finalResult = parsed as unknown as SendChatResponse;

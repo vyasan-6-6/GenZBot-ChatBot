@@ -239,6 +239,11 @@ conversationsRouter.post("/:id/messages/stream", async (req, res, next) => {
           writeSseEvent(res, "delta", { content: token });
         }
       },
+      onSuggestions: (suggestions) => {
+        if (!abortController.signal.aborted && !res.writableEnded) {
+          writeSseEvent(res, "suggestions", { suggestions });
+        }
+      },
     });
 
     if (!abortController.signal.aborted && !res.writableEnded) {
