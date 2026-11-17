@@ -4,6 +4,7 @@ import { env } from "./config/env.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { chatRouter } from "./routes/chat.routes.js";
 import { conversationsRouter } from "./routes/conversations.routes.js";
+import { documentsRouter } from "./routes/documents.routes.js";
 import { echoRouter } from "./routes/echo.routes.js";
 import { healthRouter } from "./routes/health.routes.js";
 import { modelsRouter } from "./routes/models.routes.js";
@@ -52,6 +53,7 @@ export function createApp() {
   app.use("/api/conversations", conversationsRouter);
   app.use("/api/chat", chatRouter);
   app.use("/api/echo", echoRouter);
+  app.use("/api", documentsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

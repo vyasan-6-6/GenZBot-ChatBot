@@ -110,6 +110,35 @@ export interface SendChatResponse {
   };
 }
 
+export interface UploadedDocument {
+  _id: string;
+  conversationId: string;
+  fileName: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  extractedCharacterCount: number;
+  chunkCount: number;
+  status: "processing" | "ready" | "failed";
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DocumentChunkItem {
+  _id: string;
+  documentId: string;
+  conversationId: string;
+  chunkIndex: number;
+  text: string;
+  characterCount: number;
+  metadata: {
+    fileName: string;
+    chunkIndex: number;
+    totalChunks: number;
+  };
+}
+
 export async function fetchHealth(): Promise<HealthCheckResult> {
   const startedAt = performance.now();
   const response = await fetch(`${API_BASE_URL}/api/health`, {
@@ -507,4 +536,112 @@ export async function streamConversationMessage(
     result: finalResult,
     roundTripMs,
   };
+}
+
+export async function uploadConversationDocument(
+  conversationId: string,
+  file: File
+): Promise<{ document: UploadedDocument; chunkCount: number }> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/conversations/${encodeURIComponent(conversationId)}/documents`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
+
+  const payload = (await response.json()) as {
+    ok: boolean;
+    document?: UploadedDocument;
+    chunkCount?: number;
+    error?: string;
+  };
+
+  if (!response.ok || !payload.ok || !payload.document) {
+    throw new Error(payload.error ?? `Upload failed (HTTP ${response.status})`);
+  }
+
+  return {
+    document: payload.document,
+    chunkCount: payload.chunkCount ?? 0,
+  };
+}
+
+export async function fetchConversationDocuments(
+  conversationId: string
+): Promise<UploadedDocument[]> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/conversations/${encodeURIComponent(conversationId)}/documents`,
+    {
+      method: "GET",
+      cache: "no-store",
+    }
+  );
+
+  const payload = (await response.json()) as {
+    ok: boolean;
+    documents?: UploadedDocument[];
+    error?: string;
+  };
+
+  if (!response.ok || !payload.ok) {
+    throw new Error(
+      payload.error ?? `Failed to fetch documents (HTTP ${response.status})`
+    );
+  }
+
+  return payload.documents ?? [];
+}
+
+export async function fetchDocumentChunks(
+  documentId: string
+): Promise<{ document: UploadedDocument; chunks: DocumentChunkItem[] }> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/documents/${encodeURIComponent(documentId)}/chunks`,
+    {
+      method: "GET",
+      cache: "no-store",
+    }
+  );
+
+  const payload = (await response.json()) as {
+    ok: boolean;
+    document?: UploadedDocument;
+    chunks?: DocumentChunkItem[];
+    error?: string;
+  };
+
+  if (!response.ok || !payload.ok || !payload.document || !payload.chunks) {
+    throw new Error(
+      payload.error ?? `Failed to fetch chunks (HTTP ${response.status})`
+    );
+  }
+
+  return {
+    document: payload.document,
+    chunks: payload.chunks,
+  };
+}
+
+export async function deleteDocument(documentId: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/documents/${encodeURIComponent(documentId)}`,
+    {
+      method: "DELETE",
+    }
+  );
+
+  const payload = (await response.json()) as {
+    ok: boolean;
+    error?: string;
+  };
+
+  if (!response.ok || !payload.ok) {
+    throw new Error(
+      payload.error ?? `Failed to delete document (HTTP ${response.status})`
+    );
+  }
 }

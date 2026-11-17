@@ -16,18 +16,24 @@ import {
 import {
   createConversation,
   deleteConversation,
+  deleteDocument,
   fetchAvailableModels,
   fetchConversationDetail,
+  fetchConversationDocuments,
   fetchConversations,
+  fetchDocumentChunks,
   fetchHealth,
   regenerateConversationTitle,
   renameConversation,
   streamConversationMessage,
   updateConversation,
+  uploadConversationDocument,
   type AvailableModel,
   type ChatMessage,
   type ConversationSummary,
+  type DocumentChunkItem,
   type HealthCheckResult,
+  type UploadedDocument,
 } from "@/lib/api";
 
 export function ChatWorkspace() {
@@ -68,9 +74,17 @@ export function ChatWorkspace() {
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
 
+  const [documents, setDocuments] = useState<UploadedDocument[]>([]);
+  const [uploadingDoc, setUploadingDoc] = useState<boolean>(false);
+  const [selectedDocForChunks, setSelectedDocForChunks] =
+    useState<UploadedDocument | null>(null);
+  const [chunksList, setChunksList] = useState<DocumentChunkItem[]>([]);
+  const [loadingChunks, setLoadingChunks] = useState<boolean>(false);
+
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const activeIdRef = useRef<string | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     activeIdRef.current = activeConversationId;
@@ -93,9 +107,13 @@ export function ChatWorkspace() {
     setError(null);
 
     try {
-      const detail = await fetchConversationDetail(conversationId);
+      const [detail, docs] = await Promise.all([
+        fetchConversationDetail(conversationId),
+        fetchConversationDocuments(conversationId).catch(() => []),
+      ]);
       if (activeIdRef.current !== conversationId) return;
       setMessages(detail.messages);
+      setDocuments(docs);
       setModelName(detail.model);
       setTemperature(detail.temperature);
       setSystemPrompt(
@@ -105,6 +123,7 @@ export function ChatWorkspace() {
     } catch (err) {
       if (activeIdRef.current !== conversationId) return;
       setMessages([]);
+      setDocuments([]);
       setError(
         err instanceof Error ? err.message : "Failed to load conversation"
       );
@@ -290,6 +309,7 @@ export function ChatWorkspace() {
           setActiveConversationId(null);
           activeIdRef.current = null;
           setMessages([]);
+          setDocuments([]);
         }
       }
     } catch (err) {
@@ -351,6 +371,69 @@ export function ChatWorkspace() {
       setError(
         err instanceof Error ? err.message : "Failed to update system prompt"
       );
+    }
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    e.target.value = "";
+    setUploadingDoc(true);
+    setError(null);
+
+    let targetConvId = activeConversationId;
+    try {
+      if (!targetConvId) {
+        const created = await createConversation({
+          title: `Doc: ${file.name.slice(0, 30)}`,
+          model: modelName,
+        });
+        targetConvId = created._id;
+        setConversations((prev) => [created, ...prev]);
+        setActiveConversationId(targetConvId);
+        activeIdRef.current = targetConvId;
+      }
+
+      const res = await uploadConversationDocument(targetConvId, file);
+      setDocuments((prev) => [
+        res.document,
+        ...prev.filter((d) => d._id !== res.document._id),
+      ]);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to upload document"
+      );
+    } finally {
+      setUploadingDoc(false);
+    }
+  }
+
+  async function handleDeleteDoc(documentId: string) {
+    try {
+      await deleteDocument(documentId);
+      setDocuments((prev) => prev.filter((d) => d._id !== documentId));
+      if (selectedDocForChunks?._id === documentId) {
+        setSelectedDocForChunks(null);
+        setChunksList([]);
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to delete document"
+      );
+    }
+  }
+
+  async function handleInspectChunks(doc: UploadedDocument) {
+    setSelectedDocForChunks(doc);
+    setLoadingChunks(true);
+    try {
+      const res = await fetchDocumentChunks(doc._id);
+      setChunksList(res.chunks);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load chunks");
+    } finally {
+      setLoadingChunks(false);
     }
   }
 
@@ -949,13 +1032,96 @@ export function ChatWorkspace() {
 
             {error && <div className="alert-error">{error}</div>}
 
+            {(documents.length > 0 || uploadingDoc) && (
+              <div className="doc-tray">
+                <div className="doc-tray-header">
+                  <span className="doc-tray-title">
+                    Attached Documents ({documents.length})
+                  </span>
+                  <span className="doc-tray-hint">
+                    Click a document to inspect its chunks
+                  </span>
+                </div>
+                <div className="doc-chips">
+                  {documents.map((doc) => (
+                    <div key={doc._id} className="doc-chip">
+                      <button
+                        type="button"
+                        className="doc-chip-btn"
+                        onClick={() => void handleInspectChunks(doc)}
+                        title="Click to view generated chunks"
+                      >
+                        <span className="doc-icon">📄</span>
+                        <span className="doc-name">{doc.fileName}</span>
+                        <span
+                          className={`doc-badge ${
+                            doc.status === "ready"
+                              ? "doc-badge-ready"
+                              : doc.status === "failed"
+                              ? "doc-badge-failed"
+                              : "doc-badge-pending"
+                          }`}
+                        >
+                          {doc.status === "ready"
+                            ? `${doc.chunkCount} chunks`
+                            : doc.status === "failed"
+                            ? "Failed"
+                            : "Processing..."}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="doc-delete-btn"
+                        onClick={() => void handleDeleteDoc(doc._id)}
+                        title="Remove document"
+                        aria-label={`Remove ${doc.fileName}`}
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  ))}
+                  {uploadingDoc && (
+                    <div className="doc-chip doc-chip-loading">
+                      <span className="doc-icon">⏳</span>
+                      <span className="doc-name">
+                        Extracting &amp; Chunking...
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleFormSubmit} className="chat-composer">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept=".pdf,.txt,.md,.json,.csv"
+                style={{ display: "none" }}
+              />
+              <button
+                type="button"
+                className="btn-attach"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingDoc || sending}
+                title="Upload PDF or Text document"
+                aria-label="Upload document"
+              >
+                📎
+              </button>
               <textarea
                 rows={2}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask GenZBot anything... (Enter to send, Shift+Enter for newline)"
+                placeholder={
+                  documents.length > 0
+                    ? `Ask questions about ${documents
+                        .map((d) => d.fileName)
+                        .join(", ")}...`
+                    : "Ask GenZBot anything or upload a document... (Enter to send)"
+                }
                 maxLength={4000}
                 disabled={sending}
                 aria-label="Chat message"
@@ -1093,6 +1259,77 @@ export function ChatWorkspace() {
                   Save Prompt
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedDocForChunks && (
+        <div
+          className="modal-overlay"
+          onClick={() => setSelectedDocForChunks(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="chunks-modal-title"
+        >
+          <div
+            className="modal-card doc-chunks-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <h2 id="chunks-modal-title">
+                  📄 {selectedDocForChunks.fileName}
+                </h2>
+                <p className="muted modal-subtitle">
+                  {selectedDocForChunks.chunkCount} chunks generated &bull;{" "}
+                  {selectedDocForChunks.extractedCharacterCount} characters
+                  extracted
+                </p>
+              </div>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => setSelectedDocForChunks(null)}
+                aria-label="Close modal"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="chunks-list">
+              {loadingChunks ? (
+                <p className="muted">Loading chunks from MongoDB...</p>
+              ) : chunksList.length === 0 ? (
+                <p className="muted">No chunks found for this document.</p>
+              ) : (
+                chunksList.map((chunk) => (
+                  <div key={chunk._id} className="chunk-card">
+                    <div className="chunk-card-header">
+                      <span className="chunk-badge">
+                        Chunk #{chunk.chunkIndex + 1}
+                      </span>
+                      <span className="muted chunk-chars">
+                        {chunk.characterCount} characters
+                      </span>
+                    </div>
+                    <pre className="chunk-text">{chunk.text}</pre>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="modal-footer">
+              <span className="muted prompt-count">
+                Chunks stored in MongoDB &bull; Ready for vector embeddings
+              </span>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setSelectedDocForChunks(null)}
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

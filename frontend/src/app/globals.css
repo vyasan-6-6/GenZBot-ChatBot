@@ -1186,3 +1186,206 @@ button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Document Tray & Chips */
+.doc-tray {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.65rem 0.9rem;
+  margin-bottom: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.doc-tray-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.doc-tray-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.doc-tray-hint {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.doc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.doc-chip {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  transition: all 0.15s ease;
+}
+
+.doc-chip:hover {
+  border-color: var(--accent);
+}
+
+.doc-chip-btn {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  padding: 0.3rem 0.55rem;
+  font-size: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.doc-icon {
+  font-size: 0.88rem;
+}
+
+.doc-name {
+  font-weight: 500;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.doc-badge {
+  font-size: 0.68rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.doc-badge-ready {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+.doc-badge-pending {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+.doc-badge-failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.doc-delete-btn {
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border);
+  color: var(--muted);
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  transition: all 0.15s ease;
+}
+
+.doc-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.doc-chip-loading {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  gap: 0.35rem;
+}
+
+.btn-attach {
+  background: var(--surface-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 1rem;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.btn-attach:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.btn-attach:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Chunks Inspector Modal */
+.doc-chunks-modal {
+  max-width: 680px;
+  max-height: 80vh;
+}
+
+.chunks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow-y: auto;
+  max-height: 50vh;
+  padding-right: 0.35rem;
+}
+
+.chunk-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.chunk-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chunk-badge {
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+
+.chunk-chars {
+  font-size: 0.72rem;
+}
+
+.chunk-text {
+  font-family: inherit;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  margin: 0;
+  background: transparent;
+  padding: 0;
+}
