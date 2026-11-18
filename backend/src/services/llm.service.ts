@@ -495,9 +495,15 @@ export async function listAvailableModels(): Promise<{
     }
 
     const data = (await response.json()) as OllamaTagsResponse;
+    const isEmbeddingOnlyModel = (name: string) =>
+      /embed|minilm|bge-/i.test(name);
+
     const models: AvailableModel[] = (data.models ?? [])
-      .filter((item): item is NonNullable<typeof item> & { name: string } =>
-        Boolean(item?.name)
+      .filter(
+        (item): item is NonNullable<typeof item> & { name: string } =>
+          typeof item?.name === "string" &&
+          item.name.length > 0 &&
+          !isEmbeddingOnlyModel(item.name)
       )
       .map((item) => ({
         name: item.name,

@@ -3,6 +3,7 @@ import multer from "multer";
 import { HttpError } from "../middleware/errorHandler.js";
 import {
   deleteDocumentAndChunks,
+  embedDocumentChunks,
   getDocumentChunks,
   listConversationDocuments,
   processAndStoreDocument,
@@ -70,10 +71,23 @@ documentsRouter.post(
       ok: true,
       document: result.document,
       chunkCount: result.chunks.length,
+      embedding: result.embedding,
       chunksPreview: result.chunks.slice(0, 3),
     });
   }
 );
+
+// Regenerate / backfill embeddings for an existing document
+documentsRouter.post("/documents/:documentId/embed", async (req, res) => {
+  const documentId = getSingleParam(req.params.documentId);
+  const result = await embedDocumentChunks(documentId);
+
+  res.status(200).json({
+    ok: true,
+    document: result.document,
+    embedding: result.embedding,
+  });
+});
 
 // List documents for conversation
 documentsRouter.get(

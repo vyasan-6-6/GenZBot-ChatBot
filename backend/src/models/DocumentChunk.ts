@@ -27,6 +27,20 @@ const documentChunkSchema = new Schema(
       type: Number,
       required: true,
     },
+    embedding: {
+      type: [Number],
+      default: undefined,
+      select: false,
+    },
+    embeddingModel: {
+      type: String,
+      trim: true,
+      default: undefined,
+    },
+    embeddingDimensions: {
+      type: Number,
+      default: 0,
+    },
     metadata: {
       fileName: { type: String, required: true },
       chunkIndex: { type: Number, required: true },

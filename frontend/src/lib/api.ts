@@ -119,6 +119,9 @@ export interface UploadedDocument {
   sizeBytes: number;
   extractedCharacterCount: number;
   chunkCount: number;
+  embeddedChunkCount?: number;
+  embeddingModel?: string;
+  embeddingDimensions?: number;
   status: "processing" | "ready" | "failed";
   errorMessage?: string;
   createdAt: string;
@@ -132,6 +135,8 @@ export interface DocumentChunkItem {
   chunkIndex: number;
   text: string;
   characterCount: number;
+  embeddingModel?: string;
+  embeddingDimensions?: number;
   metadata: {
     fileName: string;
     chunkIndex: number;

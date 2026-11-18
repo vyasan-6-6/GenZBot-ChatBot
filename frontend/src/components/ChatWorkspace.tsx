@@ -1063,7 +1063,9 @@ export function ChatWorkspace() {
                           }`}
                         >
                           {doc.status === "ready"
-                            ? `${doc.chunkCount} chunks`
+                            ? doc.embeddingDimensions
+                              ? `${doc.chunkCount} chunks · ${doc.embeddingDimensions}d`
+                              : `${doc.chunkCount} chunks`
                             : doc.status === "failed"
                             ? "Failed"
                             : "Processing..."}
@@ -1084,7 +1086,7 @@ export function ChatWorkspace() {
                     <div className="doc-chip doc-chip-loading">
                       <span className="doc-icon">⏳</span>
                       <span className="doc-name">
-                        Extracting &amp; Chunking...
+                        Chunking &amp; Embedding...
                       </span>
                     </div>
                   )}
@@ -1282,9 +1284,11 @@ export function ChatWorkspace() {
                   📄 {selectedDocForChunks.fileName}
                 </h2>
                 <p className="muted modal-subtitle">
-                  {selectedDocForChunks.chunkCount} chunks generated &bull;{" "}
-                  {selectedDocForChunks.extractedCharacterCount} characters
-                  extracted
+                  {selectedDocForChunks.chunkCount} chunks &bull;{" "}
+                  {selectedDocForChunks.extractedCharacterCount} chars
+                  {selectedDocForChunks.embeddingDimensions
+                    ? ` • ${selectedDocForChunks.embeddingDimensions}d vectors (${selectedDocForChunks.embeddingModel ?? "embedded"})`
+                    : ""}
                 </p>
               </div>
               <button
@@ -1310,7 +1314,10 @@ export function ChatWorkspace() {
                         Chunk #{chunk.chunkIndex + 1}
                       </span>
                       <span className="muted chunk-chars">
-                        {chunk.characterCount} characters
+                        {chunk.characterCount} chars
+                        {chunk.embeddingDimensions
+                          ? ` · ${chunk.embeddingDimensions}d vector`
+                          : ""}
                       </span>
                     </div>
                     <pre className="chunk-text">{chunk.text}</pre>
@@ -1321,7 +1328,9 @@ export function ChatWorkspace() {
 
             <div className="modal-footer">
               <span className="muted prompt-count">
-                Chunks stored in MongoDB &bull; Ready for vector embeddings
+                {selectedDocForChunks.embeddingDimensions
+                  ? `Embedded with ${selectedDocForChunks.embeddingModel} (${selectedDocForChunks.embeddingDimensions} dimensions)`
+                  : "Chunks stored in MongoDB"}
               </span>
               <button
                 type="button"

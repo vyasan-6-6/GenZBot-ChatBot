@@ -59,4 +59,19 @@ export const env = {
     120_000,
     "LLM_TIMEOUT_MS"
   ),
+  embeddingProvider: (
+    process.env.EMBEDDING_PROVIDER ?? "ollama"
+  ).toLowerCase() as "ollama" | "openai-compatible",
+  embeddingBaseUrl: (
+    process.env.EMBEDDING_BASE_URL ??
+    process.env.LLM_BASE_URL ??
+    "http://127.0.0.1:11434"
+  ).replace(/\/+$/, ""),
+  embeddingApiKey: process.env.EMBEDDING_API_KEY ?? "",
+  embeddingModel: process.env.EMBEDDING_MODEL ?? "nomic-embed-text",
+  embeddingTimeoutMs: parsePositiveInt(
+    process.env.EMBEDDING_TIMEOUT_MS,
+    60_000,
+    "EMBEDDING_TIMEOUT_MS"
+  ),
 } as const;

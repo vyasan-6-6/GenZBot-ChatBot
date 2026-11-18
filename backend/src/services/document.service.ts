@@ -4,6 +4,7 @@ import { HttpError } from "../middleware/errorHandler.js";
 import { Conversation } from "../models/Conversation.js";
 import { DocumentModel } from "../models/Document.js";
 import { DocumentChunkModel } from "../models/DocumentChunk.js";
+import { generateEmbeddings } from "./embedding.service.js";
 
 export interface GeneratedChunk {
   chunkIndex: number;
@@ -182,12 +183,20 @@ export async function processAndStoreDocument(params: {
       throw new HttpError(400, "Document did not yield any usable text chunks.");
     }
 
-    const chunkDocs = generatedChunks.map((c) => ({
+    // Generate vector embeddings for all chunks
+    const embeddingResult = await generateEmbeddings(
+      generatedChunks.map((c) => c.text)
+    );
+
+    const chunkDocs = generatedChunks.map((c, idx) => ({
       documentId: docRecord._id,
       conversationId: conversation._id,
       chunkIndex: c.chunkIndex,
       text: c.text,
       characterCount: c.characterCount,
+      embedding: embeddingResult.vectors[idx],
+      embeddingModel: embeddingResult.model,
+      embeddingDimensions: embeddingResult.dimensions,
       metadata: {
         fileName,
         chunkIndex: c.chunkIndex,
@@ -204,6 +213,9 @@ export async function processAndStoreDocument(params: {
           status: "ready",
           extractedCharacterCount: extractedText.length,
           chunkCount: generatedChunks.length,
+          embeddedChunkCount: embeddingResult.vectors.length,
+          embeddingModel: embeddingResult.model,
+          embeddingDimensions: embeddingResult.dimensions,
         },
       },
       { returnDocument: "after" }
@@ -212,6 +224,12 @@ export async function processAndStoreDocument(params: {
     return {
       document: updatedDoc ?? docRecord.toObject(),
       chunks: generatedChunks,
+      embedding: {
+        model: embeddingResult.model,
+        provider: embeddingResult.provider,
+        dimensions: embeddingResult.dimensions,
+        durationMs: embeddingResult.durationMs,
+      },
     };
   } catch (error) {
     const errorMsg =
@@ -224,6 +242,65 @@ export async function processAndStoreDocument(params: {
     });
     throw error;
   }
+}
+
+export async function embedDocumentChunks(documentId: string) {
+  if (!mongoose.isValidObjectId(documentId)) {
+    throw new HttpError(400, "Invalid document ID");
+  }
+
+  const doc = await DocumentModel.findById(documentId).lean();
+  if (!doc) {
+    throw new HttpError(404, "Document not found");
+  }
+
+  const chunks = await DocumentChunkModel.find({ documentId: doc._id })
+    .sort({ chunkIndex: 1 })
+    .lean();
+
+  if (chunks.length === 0) {
+    throw new HttpError(400, "Document has no chunks to embed.");
+  }
+
+  const embeddingResult = await generateEmbeddings(chunks.map((c) => c.text));
+
+  await Promise.all(
+    chunks.map((chunk, idx) =>
+      DocumentChunkModel.updateOne(
+        { _id: chunk._id },
+        {
+          $set: {
+            embedding: embeddingResult.vectors[idx],
+            embeddingModel: embeddingResult.model,
+            embeddingDimensions: embeddingResult.dimensions,
+          },
+        }
+      )
+    )
+  );
+
+  const updatedDoc = await DocumentModel.findByIdAndUpdate(
+    doc._id,
+    {
+      $set: {
+        embeddedChunkCount: embeddingResult.vectors.length,
+        embeddingModel: embeddingResult.model,
+        embeddingDimensions: embeddingResult.dimensions,
+      },
+    },
+    { returnDocument: "after" }
+  ).lean();
+
+  return {
+    document: updatedDoc ?? doc,
+    embedding: {
+      model: embeddingResult.model,
+      provider: embeddingResult.provider,
+      dimensions: embeddingResult.dimensions,
+      embeddedCount: embeddingResult.vectors.length,
+      durationMs: embeddingResult.durationMs,
+    },
+  };
 }
 
 export async function listConversationDocuments(conversationId: string) {

@@ -35,6 +35,19 @@ const documentSchema = new Schema(
       type: Number,
       default: 0,
     },
+    embeddedChunkCount: {
+      type: Number,
+      default: 0,
+    },
+    embeddingModel: {
+      type: String,
+      trim: true,
+      default: undefined,
+    },
+    embeddingDimensions: {
+      type: Number,
+      default: 0,
+    },
     status: {
       type: String,
       enum: ["processing", "ready", "failed"],
