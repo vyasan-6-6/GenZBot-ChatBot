@@ -72,6 +72,7 @@ documentsRouter.post(
       document: result.document,
       chunkCount: result.chunks.length,
       embedding: result.embedding,
+      vectorStore: result.vectorStore,
       chunksPreview: result.chunks.slice(0, 3),
     });
   }
@@ -86,6 +87,7 @@ documentsRouter.post("/documents/:documentId/embed", async (req, res) => {
     ok: true,
     document: result.document,
     embedding: result.embedding,
+    vectorStore: result.vectorStore,
   });
 });
 

@@ -1039,7 +1039,13 @@ export function ChatWorkspace() {
                     Attached Documents ({documents.length})
                   </span>
                   <span className="doc-tray-hint">
-                    Click a document to inspect its chunks
+                    Store:{" "}
+                    <strong>
+                      {health?.data.vectorStore?.provider === "pinecone"
+                        ? `Pinecone (${health.data.vectorStore.indexName})`
+                        : "Local (Cosine)"}
+                    </strong>{" "}
+                    &bull; Click to inspect chunks
                   </span>
                 </div>
                 <div className="doc-chips">

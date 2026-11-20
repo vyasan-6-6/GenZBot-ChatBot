@@ -74,4 +74,7 @@ export const env = {
     60_000,
     "EMBEDDING_TIMEOUT_MS"
   ),
+  pineconeApiKey: process.env.PINECONE_API_KEY?.trim() ?? "",
+  pineconeIndex: process.env.PINECONE_INDEX?.trim() ?? "",
+  pineconeNamespace: process.env.PINECONE_NAMESPACE?.trim() ?? "",
 } as const;

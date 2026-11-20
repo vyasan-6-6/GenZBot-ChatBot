@@ -23,6 +23,15 @@ export interface HealthResponse {
     model: string;
     baseUrl: string;
   };
+  vectorStore?: VectorStoreInfo;
+}
+
+export interface VectorStoreInfo {
+  provider: "pinecone" | "local";
+  isPineconeConfigured: boolean;
+  indexName?: string;
+  namespace?: string;
+  details?: string;
 }
 
 export interface HealthCheckResult {

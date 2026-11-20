@@ -191,6 +191,14 @@ export function FoundationDashboard() {
                   <dd>{health.data.database.databaseName ?? "N/A"}</dd>
                 </div>
                 <div>
+                  <dt>Vector Store</dt>
+                  <dd>
+                    {health.data.vectorStore?.provider === "pinecone"
+                      ? `Pinecone (${health.data.vectorStore.indexName})`
+                      : "Local (Cosine Math)"}
+                  </dd>
+                </div>
+                <div>
                   <dt>Express Uptime</dt>
                   <dd>{health.data.uptimeSeconds}s</dd>
                 </div>

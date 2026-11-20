@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pingDatabase } from "../config/db.js";
 import { env } from "../config/env.js";
+import { getVectorStoreStatus } from "../services/vectorStore.service.js";
 
 const healthRouter = Router();
 
@@ -20,6 +21,14 @@ healthRouter.get("/", async (_req, res) => {
       model: env.llmModel,
       baseUrl: env.llmBaseUrl,
     },
+    vectorStore: getVectorStoreStatus(),
+  });
+});
+
+healthRouter.get("/vector-store", (_req, res) => {
+  res.status(200).json({
+    ok: true,
+    vectorStore: getVectorStoreStatus(),
   });
 });
 

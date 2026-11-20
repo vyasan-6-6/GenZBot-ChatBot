@@ -5,6 +5,11 @@ import { Conversation } from "../models/Conversation.js";
 import { DocumentModel } from "../models/Document.js";
 import { DocumentChunkModel } from "../models/DocumentChunk.js";
 import { generateEmbeddings } from "./embedding.service.js";
+import {
+  deleteVectors,
+  upsertVectors,
+  type VectorRecord,
+} from "./vectorStore.service.js";
 
 export interface GeneratedChunk {
   chunkIndex: number;
@@ -206,6 +211,21 @@ export async function processAndStoreDocument(params: {
 
     await DocumentChunkModel.insertMany(chunkDocs);
 
+    // Upsert vectors to Pinecone (or verify local vector persistence)
+    const vectorRecords: VectorRecord[] = chunkDocs.map((c, idx) => ({
+      id: `${docRecord._id}_chunk_${c.chunkIndex}`,
+      values: embeddingResult.vectors[idx],
+      metadata: {
+        documentId: String(docRecord._id),
+        conversationId: String(conversation._id),
+        fileName,
+        chunkIndex: c.chunkIndex,
+        text: c.text,
+        characterCount: c.characterCount,
+      },
+    }));
+    const vectorStoreResult = await upsertVectors(vectorRecords);
+
     const updatedDoc = await DocumentModel.findByIdAndUpdate(
       docRecord._id,
       {
@@ -230,6 +250,7 @@ export async function processAndStoreDocument(params: {
         dimensions: embeddingResult.dimensions,
         durationMs: embeddingResult.durationMs,
       },
+      vectorStore: vectorStoreResult,
     };
   } catch (error) {
     const errorMsg =
@@ -279,6 +300,20 @@ export async function embedDocumentChunks(documentId: string) {
     )
   );
 
+  const vectorRecords: VectorRecord[] = chunks.map((chunk, idx) => ({
+    id: `${doc._id}_chunk_${chunk.chunkIndex}`,
+    values: embeddingResult.vectors[idx],
+    metadata: {
+      documentId: String(doc._id),
+      conversationId: String(doc.conversationId),
+      fileName: doc.fileName,
+      chunkIndex: chunk.chunkIndex,
+      text: chunk.text,
+      characterCount: chunk.characterCount,
+    },
+  }));
+  const vectorStoreResult = await upsertVectors(vectorRecords);
+
   const updatedDoc = await DocumentModel.findByIdAndUpdate(
     doc._id,
     {
@@ -300,6 +335,7 @@ export async function embedDocumentChunks(documentId: string) {
       embeddedCount: embeddingResult.vectors.length,
       durationMs: embeddingResult.durationMs,
     },
+    vectorStore: vectorStoreResult,
   };
 }
 
@@ -346,6 +382,7 @@ export async function deleteDocumentAndChunks(documentId: string) {
   const [chunksResult] = await Promise.all([
     DocumentChunkModel.deleteMany({ documentId: doc._id }),
     DocumentModel.findByIdAndDelete(doc._id),
+    deleteVectors({ documentId: String(doc._id) }),
   ]);
 
   return {
